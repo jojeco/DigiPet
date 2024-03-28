@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, Animated } from "react"; // Added useRef
-import { View, Text, StyleSheet, Image } from "react-native";
+
+import React, { useState, useEffect, useRef } from "react";
+import { View, Text, StyleSheet, Image, Animated, Vibration } from "react-native"; // Corrected import
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   TapGestureHandler,
@@ -9,14 +10,20 @@ import {
 } from "react-native-gesture-handler";
 import Inventory from "./Inventory";
 import Points from "./Points";
-import Sound from 'react-native-sound';
+import Bark from "../assets/dogBarking.mp3"; 
+import Bark2 from "../assets/dogBarking2.mp3";
+import { Audio } from 'expo-av';
 
 
 const PetApp = () => {
   const [happiness, setHappiness] = useState(100);
   const [points, setPoints] = useState(0);
   const [inventory, setInventory] = useState([{ name: "Toy", effect: 10 }]); // Example item
-  const scaleAnim = useRef(new Animated.Value(1)).current; // Use useRef for the animated value
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  
+  const triggerVibrationFeedback = () => {
+    Vibration.vibrate(100); // Vibrate for 100 milliseconds
+  };
 
   const triggerHappyAnimation = () => {
     Animated.sequence([
@@ -32,21 +39,8 @@ const PetApp = () => {
       }),
     ]).start();
   };
-
-const playSound = () => {
-  const sound = new Sound('eating_sound.mp3', Sound.MAIN_BUNDLE, (error) => {
-    if (error) {
-      console.log('Failed to load the sound', error);
-      return;
-    }
-    sound.play(() => sound.release()); // Play the sound and release it after
-  });
-};
-
-const PetApp = () => {
-  const [happiness, setHappiness] = useState(100);
-  const [points, setPoints] = useState(0);
-  const [inventory, setInventory] = useState([{ name: "Toy", effect: 10 }]); // Example item
+  
+  
 
   useEffect(() => {
     const loadHappiness = async () => {
@@ -68,24 +62,41 @@ const PetApp = () => {
 
     return () => clearInterval(intervalId);
   }, []);
+  
+  const playSound = async () => {
+    const { sound } = await Audio.Sound.createAsync(
+      Bark,
+      { shouldPlay: true }
+    );
+    await sound.playAsync();
+    
+    sound.setOnPlaybackStatusUpdate(async (status) => {
+      if (status.didJustFinish) {
+        await sound.unloadAsync();
+      }
+    });
+  };
 
-  const handleTap = ({ nativeEvent }) => {
+  const handleTap = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.END) {
       console.log("Pet tapped!");
       setHappiness(prevHappiness => Math.min(100, prevHappiness + 5));
       triggerHappyAnimation(); // Trigger animation
-      playSound(); // Play sound
+      await playSound(); // Play sound
+      triggerVibrationFeedback(); // Vibrate
     }
   };
   
-  const handleLongPress = ({ nativeEvent }) => {
+  const handleLongPress = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.ACTIVE) {
       console.log("Pet long-pressed!");
       setHappiness(prevHappiness => Math.min(100, prevHappiness + 20));
       triggerHappyAnimation(); // Trigger animation
-      playSound(); // Play sound
+      await playSound(); // Play sound
+      triggerVibrationFeedback(); // Vibrate
     }
   };
+  
   
   const handleUseItem = (item) => {
     // Example: increase happiness with the item's effect
@@ -122,7 +133,6 @@ const PetApp = () => {
   );
 };
 
-
 const styles = StyleSheet.create({
   topContainer: {
     // Takes necessary space only, allowing petContainer to be at the bottom
@@ -149,6 +159,6 @@ const styles = StyleSheet.create({
     height: 200,
   },
 });
-};
+
 
 export default PetApp;
