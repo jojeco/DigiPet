@@ -58,45 +58,55 @@ const PetApp = () => {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={styles.container}>
+      <View style={styles.topContainer}>
         <Text style={styles.text}>Pet Happiness: {happiness}</Text>
-        <TapGestureHandler onHandlerStateChange={handleTap}>
-          <LongPressGestureHandler
-            onHandlerStateChange={handleLongPress}
-            minDurationMs={800}
-          >
-            <View style={styles.petContainer}>
-              <Image
-                source={require("../assets/PixelPuppy1.jpg")}
-                style={styles.petImage}
-              />
-              <Points points={points} />
-              <Inventory inventory={inventory} onUseItem={handleUseItem} />
-            </View>
-          </LongPressGestureHandler>
-        </TapGestureHandler>
+        <Points points={points} />
+        <Inventory inventory={inventory} onUseItem={handleUseItem} />
       </View>
+      
+      <TapGestureHandler onHandlerStateChange={handleTap}>
+        <LongPressGestureHandler
+          onHandlerStateChange={handleLongPress}
+          minDurationMs={800}
+        >
+          <View style={styles.petContainer}>
+            <Image
+              source={require("../assets/pixelPuppy.png")}
+              style={styles.petImage}
+            />
+          </View>
+        </LongPressGestureHandler>
+      </TapGestureHandler>
     </GestureHandlerRootView>
   );
 };
 
 const styles = StyleSheet.create({
+  topContainer: {
+    // Takes necessary space only, allowing petContainer to be at the bottom
+    justifyContent: "flex-start",
+    alignItems: "center",
+    
+  },
   container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "space-between", // This separates top content and pet container
   },
   text: {
-    marginBottom: 20,
+    marginTop: 20, // Adjust as necessary for your layout
     fontSize: 18,
   },
   petContainer: {
-    alignItems: "center",
+    flex: 1, // Take up all available space
+    justifyContent: 'flex-end', // Align children (the pet image) to the bottom
+    alignItems: 'center', // Center children horizontally
+    marginBottom: 50, // If you want some space from the bottom edge
   },
   petImage: {
     width: 200,
     height: 200,
   },
 });
+
 
 export default PetApp;
