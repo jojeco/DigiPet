@@ -1,4 +1,5 @@
-
+// Importing necessary modules and components from React, React Native, AsyncStorage for persistent storage,
+// gesture handlers for interactive animations, and sound management from expo-av.
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Image, Animated, Vibration } from "react-native"; // Corrected import
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -8,23 +9,28 @@ import {
   State,
   GestureHandlerRootView,
 } from "react-native-gesture-handler";
-import Inventory from "./Inventory";
-import Points from "./Points";
-import Bark from "../assets/dogBarking.mp3"; 
-import Bark2 from "../assets/dogBarking2.mp3";
-import { Audio } from 'expo-av';
+import Inventory from "./Inventory"; // Custom component for managing inventory items
+import Points from "./Points"; // Custom component for displaying points
+import Bark from "../assets/dogBarking.mp3"; // Sound assets for pet interactions
+import { Audio } from 'expo-av'; // Module for handling audio playback
 
 
 const PetApp = () => {
-  const [happiness, setHappiness] = useState(100);
-  const [points, setPoints] = useState(0);
-  const [inventory, setInventory] = useState([{ name: "Toy", effect: 10 }]); // Example item
+    // State hooks for managing dynamic values: pet's happiness, player's points, and the inventory of items.
+
+  const [happiness, setHappiness] = useState(100); // Pet's current happiness level
+  const [points, setPoints] = useState(0); // Player's current points
+  const [inventory, setInventory] = useState([{ name: "Toy", effect: 50 }]);// Current inventory items
+ 
+  // useRef hook to manage the animation scale for the pet image.
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  
+
+  // Function to trigger device vibration as feedback.
   const triggerVibrationFeedback = () => {
     Vibration.vibrate(100); // Vibrate for 100 milliseconds
   };
 
+  // Function to trigger a happy animation for the pet image.
   const triggerHappyAnimation = () => {
     Animated.sequence([
       Animated.timing(scaleAnim, {
@@ -41,7 +47,7 @@ const PetApp = () => {
   };
   
   
-
+  // useEffect hook to manage the persistence of pet happiness and the intervals for decreasing happiness and adding items to the inventory.
   useEffect(() => {
     const loadHappiness = async () => {
       const savedHappiness = await AsyncStorage.getItem("happiness");
@@ -52,17 +58,32 @@ const PetApp = () => {
 
     loadHappiness();
 
-    const intervalId = setInterval(() => {
+    const happinessIntervalId = setInterval(() => {
       setHappiness((prevHappiness) => {
         const newHappiness = Math.max(0, prevHappiness - 1);
         AsyncStorage.setItem("happiness", JSON.stringify(newHappiness));
         return newHappiness;
       });
-    }, 6000); // Adjust the interval as necessary
+    }, 6000); // Decrease happiness every minute // Decrease happiness every minute
 
-    return () => clearInterval(intervalId);
+    // Interval to add 'Toy' item to inventory if it's not already there and pet's happiness is not too high
+    const toyIntervalId = setInterval(() => {
+      setInventory((currentInventory) => {
+        if (!currentInventory.find(item => item.name === "Toy" )&& (happiness => 51)) {
+          return [...currentInventory, { name: "Toy", effect: 20 }];
+        }
+        return currentInventory;
+      });
+    }, 5000); // Re-add 'Toy' every 2 minutes
+
+    // Clear intervals on component unmount
+    return () => {
+      clearInterval(happinessIntervalId);
+      clearInterval(toyIntervalId);
+    };
   }, []);
   
+  // Function to play the pet interaction sound.
   const playSound = async () => {
     const { sound } = await Audio.Sound.createAsync(
       Bark,
@@ -77,20 +98,22 @@ const PetApp = () => {
     });
   };
 
+  // Event handlers for tap and long press gestures on the pet image.
   const handleTap = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.END) {
       console.log("Pet tapped!");
-      setHappiness(prevHappiness => Math.min(100, prevHappiness + 5));
+      setHappiness(prevHappiness => Math.min(100, prevHappiness + 2));
       triggerHappyAnimation(); // Trigger animation
       await playSound(); // Play sound
       triggerVibrationFeedback(); // Vibrate
     }
   };
   
+  // Function to handle long press gesture on the pet image.
   const handleLongPress = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.ACTIVE) {
       console.log("Pet long-pressed!");
-      setHappiness(prevHappiness => Math.min(100, prevHappiness + 20));
+      setHappiness(prevHappiness => Math.min(100, prevHappiness + 15));
       triggerHappyAnimation(); // Trigger animation
       await playSound(); // Play sound
       triggerVibrationFeedback(); // Vibrate
