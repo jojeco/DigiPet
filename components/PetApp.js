@@ -21,9 +21,11 @@ const PetApp = () => {
   const [happiness, setHappiness] = useState(100); // Pet's current happiness level
   const [points, setPoints] = useState(0); // Player's current points
   const [inventory, setInventory] = useState([{ name: "Toy", effect: 50 }]);// Current inventory items
- 
+
   // useRef hook to manage the animation scale for the pet image.
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  // Ref so interval callbacks always read a fresh happiness value (avoids stale closure).
+  const happinessRef = useRef(happiness);
 
   // Function to trigger device vibration as feedback.
   const triggerVibrationFeedback = () => {
@@ -45,31 +47,40 @@ const PetApp = () => {
       }),
     ]).start();
   };
-  
-  
-  // useEffect hook to manage the persistence of pet happiness and the intervals for decreasing happiness and adding items to the inventory.
+
+
+  // useEffect hook to manage the persistence of pet happiness/points on mount and the
+  // intervals for decreasing happiness and adding items to the inventory.
   useEffect(() => {
-    const loadHappiness = async () => {
-      const savedHappiness = await AsyncStorage.getItem("happiness");
-      if (savedHappiness !== null) {
-        setHappiness(JSON.parse(savedHappiness));
+    const loadData = async () => {
+      try {
+        const savedHappiness = await AsyncStorage.getItem("happiness");
+        if (savedHappiness !== null) {
+          setHappiness(JSON.parse(savedHappiness));
+        }
+        const savedPoints = await AsyncStorage.getItem("points");
+        if (savedPoints !== null) {
+          setPoints(JSON.parse(savedPoints));
+        }
+      } catch (e) {
+        // Corrupt stored value — start fresh rather than crashing on mount.
+        console.warn("Failed to load persisted state:", e);
       }
     };
 
-    loadHappiness();
+    loadData();
 
     const happinessIntervalId = setInterval(() => {
       setHappiness((prevHappiness) => {
-        const newHappiness = Math.max(0, prevHappiness - 1);
-        AsyncStorage.setItem("happiness", JSON.stringify(newHappiness));
-        return newHappiness;
+        return Math.max(0, prevHappiness - 1);
       });
-    }, 6000); // Decrease happiness every minute // Decrease happiness every minute
+    }, 6000); // Decrease happiness every minute
 
-    // Interval to add 'Toy' item to inventory if it's not already there and pet's happiness is not too high
+    // Interval to add 'Toy' item to inventory if it's not already there and
+    // happiness is above 50 (read via ref to avoid stale closure).
     const toyIntervalId = setInterval(() => {
       setInventory((currentInventory) => {
-        if (!currentInventory.find(item => item.name === "Toy" )&& (happiness => 51)) {
+        if (!currentInventory.find((item) => item.name === "Toy") && happinessRef.current > 50) {
           return [...currentInventory, { name: "Toy", effect: 20 }];
         }
         return currentInventory;
@@ -82,7 +93,18 @@ const PetApp = () => {
       clearInterval(toyIntervalId);
     };
   }, []);
-  
+
+  // Keep happinessRef in sync with state and persist to AsyncStorage whenever happiness changes.
+  useEffect(() => {
+    happinessRef.current = happiness;
+    AsyncStorage.setItem("happiness", JSON.stringify(happiness));
+  }, [happiness]);
+
+  // Persist points to AsyncStorage whenever they change.
+  useEffect(() => {
+    AsyncStorage.setItem("points", JSON.stringify(points));
+  }, [points]);
+
   // Function to play the pet interaction sound.
   const playSound = async () => {
     const { sound } = await Audio.Sound.createAsync(
@@ -90,7 +112,7 @@ const PetApp = () => {
       { shouldPlay: true }
     );
     await sound.playAsync();
-    
+
     sound.setOnPlaybackStatusUpdate(async (status) => {
       if (status.didJustFinish) {
         await sound.unloadAsync();
@@ -103,27 +125,30 @@ const PetApp = () => {
     if (nativeEvent.state === State.END) {
       console.log("Pet tapped!");
       setHappiness(prevHappiness => Math.min(100, prevHappiness + 2));
+      setPoints((p) => p + 1);
       triggerHappyAnimation(); // Trigger animation
       await playSound(); // Play sound
       triggerVibrationFeedback(); // Vibrate
     }
   };
-  
+
   // Function to handle long press gesture on the pet image.
   const handleLongPress = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.ACTIVE) {
       console.log("Pet long-pressed!");
       setHappiness(prevHappiness => Math.min(100, prevHappiness + 15));
+      setPoints((p) => p + 5);
       triggerHappyAnimation(); // Trigger animation
       await playSound(); // Play sound
       triggerVibrationFeedback(); // Vibrate
     }
   };
-  
-  
+
+
   const handleUseItem = (item) => {
     // Example: increase happiness with the item's effect
     setHappiness((current) => Math.min(100, current + item.effect));
+    setPoints((p) => p + 2);
     // Remove item from inventory after use
     setInventory((current) => current.filter((i) => i !== item));
   };
@@ -135,7 +160,7 @@ const PetApp = () => {
         <Points points={points} />
         <Inventory inventory={inventory} onUseItem={handleUseItem} />
       </View>
-      
+
       <TapGestureHandler onHandlerStateChange={handleTap}>
         <LongPressGestureHandler
           onHandlerStateChange={handleLongPress}
@@ -161,7 +186,7 @@ const styles = StyleSheet.create({
     // Takes necessary space only, allowing petContainer to be at the bottom
     justifyContent: "flex-start",
     alignItems: "center",
-    
+
   },
   container: {
     flex: 1,
