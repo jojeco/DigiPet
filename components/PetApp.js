@@ -11,17 +11,27 @@ import {
 } from "react-native-gesture-handler";
 import Inventory from "./Inventory"; // Custom component for managing inventory items
 import Points from "./Points"; // Custom component for displaying points
+import Shop from "./Shop"; // Shop component for purchasing food and toys
 import Bark from "../assets/dogBarking.mp3"; // Sound assets for pet interactions
 import { Audio } from 'expo-av'; // Module for handling audio playback
 
 
 const PetApp = () => {
-    // State hooks for managing dynamic values: pet's happiness, player's points, and the inventory of items.
+    // State hooks for managing dynamic values: pet's happiness, hunger, player's points, and the inventory of items.
 
   const [happiness, setHappiness] = useState(100); // Pet's current happiness level
+  const [hunger, setHunger] = useState(100); // Pet's current hunger level (100 = full, 0 = starving)
   const [points, setPoints] = useState(0); // Player's current points
   const [inventory, setInventory] = useState([{ name: "Toy", effect: 50 }]);// Current inventory items
- 
+
+  // Ref to read current hunger value inside intervals without stale closure issues
+  const hungerRef = useRef(100);
+
+  // Keep hungerRef in sync whenever hunger state changes
+  useEffect(() => {
+    hungerRef.current = hunger;
+  }, [hunger]);
+
   // useRef hook to manage the animation scale for the pet image.
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -45,44 +55,64 @@ const PetApp = () => {
       }),
     ]).start();
   };
-  
-  
-  // useEffect hook to manage the persistence of pet happiness and the intervals for decreasing happiness and adding items to the inventory.
+
+
+  // useEffect hook to manage the persistence of pet stats and the intervals for decreasing happiness/hunger
+  // and adding items to the inventory.
   useEffect(() => {
-    const loadHappiness = async () => {
+    const loadState = async () => {
       const savedHappiness = await AsyncStorage.getItem("happiness");
       if (savedHappiness !== null) {
         setHappiness(JSON.parse(savedHappiness));
       }
+      const savedHunger = await AsyncStorage.getItem("hunger");
+      if (savedHunger !== null) {
+        const parsedHunger = JSON.parse(savedHunger);
+        setHunger(parsedHunger);
+        hungerRef.current = parsedHunger;
+      }
     };
 
-    loadHappiness();
+    loadState();
 
+    // Happiness decays every 6 seconds; 2x faster when hunger < 30
     const happinessIntervalId = setInterval(() => {
       setHappiness((prevHappiness) => {
-        const newHappiness = Math.max(0, prevHappiness - 1);
+        const decayAmount = hungerRef.current < 30 ? 2 : 1;
+        const newHappiness = Math.max(0, prevHappiness - decayAmount);
         AsyncStorage.setItem("happiness", JSON.stringify(newHappiness));
         return newHappiness;
       });
-    }, 6000); // Decrease happiness every minute // Decrease happiness every minute
+    }, 6000); // Decrease happiness every 6 seconds
+
+    // Hunger decays 1 point every 5 seconds
+    const hungerIntervalId = setInterval(() => {
+      setHunger((prevHunger) => {
+        const newHunger = Math.max(0, prevHunger - 1);
+        hungerRef.current = newHunger;
+        AsyncStorage.setItem("hunger", JSON.stringify(newHunger));
+        return newHunger;
+      });
+    }, 5000); // Decrease hunger every 5 seconds
 
     // Interval to add 'Toy' item to inventory if it's not already there and pet's happiness is not too high
     const toyIntervalId = setInterval(() => {
       setInventory((currentInventory) => {
-        if (!currentInventory.find(item => item.name === "Toy" )&& (happiness => 51)) {
+        if (!currentInventory.find(item => item.name === "Toy") && (happiness >= 51)) {
           return [...currentInventory, { name: "Toy", effect: 20 }];
         }
         return currentInventory;
       });
-    }, 5000); // Re-add 'Toy' every 2 minutes
+    }, 5000); // Re-add 'Toy' every 5 seconds if conditions are met
 
     // Clear intervals on component unmount
     return () => {
       clearInterval(happinessIntervalId);
+      clearInterval(hungerIntervalId);
       clearInterval(toyIntervalId);
     };
   }, []);
-  
+
   // Function to play the pet interaction sound.
   const playSound = async () => {
     const { sound } = await Audio.Sound.createAsync(
@@ -90,7 +120,7 @@ const PetApp = () => {
       { shouldPlay: true }
     );
     await sound.playAsync();
-    
+
     sound.setOnPlaybackStatusUpdate(async (status) => {
       if (status.didJustFinish) {
         await sound.unloadAsync();
@@ -103,24 +133,26 @@ const PetApp = () => {
     if (nativeEvent.state === State.END) {
       console.log("Pet tapped!");
       setHappiness(prevHappiness => Math.min(100, prevHappiness + 2));
+      setPoints(prevPoints => prevPoints + 5); // Earn 5 points per tap
       triggerHappyAnimation(); // Trigger animation
       await playSound(); // Play sound
       triggerVibrationFeedback(); // Vibrate
     }
   };
-  
+
   // Function to handle long press gesture on the pet image.
   const handleLongPress = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.ACTIVE) {
       console.log("Pet long-pressed!");
       setHappiness(prevHappiness => Math.min(100, prevHappiness + 15));
+      setPoints(prevPoints => prevPoints + 15); // Earn 15 points per long-press
       triggerHappyAnimation(); // Trigger animation
       await playSound(); // Play sound
       triggerVibrationFeedback(); // Vibrate
     }
   };
-  
-  
+
+
   const handleUseItem = (item) => {
     // Example: increase happiness with the item's effect
     setHappiness((current) => Math.min(100, current + item.effect));
@@ -132,10 +164,18 @@ const PetApp = () => {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.topContainer}>
         <Text style={styles.text}>Pet Happiness: {happiness}</Text>
+        <Text style={styles.text}>Hunger: {hunger}</Text>
         <Points points={points} />
+        <Shop
+          points={points}
+          setPoints={setPoints}
+          hunger={hunger}
+          setHunger={setHunger}
+          setHappiness={setHappiness}
+        />
         <Inventory inventory={inventory} onUseItem={handleUseItem} />
       </View>
-      
+
       <TapGestureHandler onHandlerStateChange={handleTap}>
         <LongPressGestureHandler
           onHandlerStateChange={handleLongPress}
@@ -161,7 +201,7 @@ const styles = StyleSheet.create({
     // Takes necessary space only, allowing petContainer to be at the bottom
     justifyContent: "flex-start",
     alignItems: "center",
-    
+
   },
   container: {
     flex: 1,
