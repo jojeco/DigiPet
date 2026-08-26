@@ -1,8 +1,7 @@
-// Importing necessary modules and components from React, React Native, AsyncStorage for persistent storage,
+// Importing necessary modules and components from React, React Native,
 // gesture handlers for interactive animations, and sound management from expo-av.
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Image, Animated, Vibration } from "react-native"; // Corrected import
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   TapGestureHandler,
   LongPressGestureHandler,
@@ -11,19 +10,41 @@ import {
 } from "react-native-gesture-handler";
 import Inventory from "./Inventory"; // Custom component for managing inventory items
 import Points from "./Points"; // Custom component for displaying points
+import StatBar from "./StatBar"; // Presentational stat bars (happiness/hunger/energy)
+import Shop from "./Shop"; // Buyable items, spends points
 import Bark from "../assets/dogBarking.mp3"; // Sound assets for pet interactions
 import { Audio } from 'expo-av'; // Module for handling audio playback
+import {
+  pet as petAction,
+  play as playAction,
+  useItem as applyItem,
+  buyItem,
+  applyElapsed,
+  mood,
+} from "../game/petState"; // Pure game rules — see game/petState.js
+import { loadState, saveState } from "../game/petStorage"; // AsyncStorage persistence
 
+// How often the "time passes" tick runs while the app is open. This is the
+// single interval that replaces the old happiness-decay + toy-regen
+// intervals: it applies elapsed-time decay via applyElapsed() and persists.
+const TICK_INTERVAL_MS = 7000;
+
+// Toy the pet gets back for free once happiness is high enough — this is
+// the mechanic the old `(happiness => 51)` always-truthy bug was supposed
+// to gate but never actually did (an arrow function is always truthy).
+const FREE_TOY = { id: "toy", name: "Toy", effects: { happiness: 50 } };
 
 const PetApp = () => {
-    // State hooks for managing dynamic values: pet's happiness, player's points, and the inventory of items.
+  // Single source of truth for the whole pet: stats, points, xp, level,
+  // inventory, lastSeen. `null` until loadState()+applyElapsed() resolve on
+  // mount, so we don't render undefined.happiness.
+  const [state, setState] = useState(null);
 
-  const [happiness, setHappiness] = useState(100); // Pet's current happiness level
-  const [points, setPoints] = useState(0); // Player's current points
-  const [inventory, setInventory] = useState([{ name: "Toy", effect: 50 }]);// Current inventory items
- 
   // useRef hook to manage the animation scale for the pet image.
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  // Keep the latest state in a ref too, so the unmount cleanup can save the
+  // most recent value without needing state in its dependency array.
+  const stateRef = useRef(null);
 
   // Function to trigger device vibration as feedback.
   const triggerVibrationFeedback = () => {
@@ -45,44 +66,56 @@ const PetApp = () => {
       }),
     ]).start();
   };
-  
-  
-  // useEffect hook to manage the persistence of pet happiness and the intervals for decreasing happiness and adding items to the inventory.
+
+
+  // On mount: hydrate from storage, apply decay for time spent away, then
+  // start a single tick interval that keeps applying elapsed-time decay and
+  // persisting while the app is open. On unmount: persist one last time and
+  // clear the interval.
   useEffect(() => {
-    const loadHappiness = async () => {
-      const savedHappiness = await AsyncStorage.getItem("happiness");
-      if (savedHappiness !== null) {
-        setHappiness(JSON.parse(savedHappiness));
+    let tickId;
+    let cancelled = false;
+
+    const hydrate = async () => {
+      const loaded = await loadState();
+      const caughtUp = applyElapsed(loaded, Date.now());
+      if (cancelled) return;
+      stateRef.current = caughtUp;
+      setState(caughtUp);
+      await saveState(caughtUp, { force: true });
+
+      tickId = setInterval(() => {
+        setState((prev) => {
+          if (!prev) return prev;
+          let next = applyElapsed(prev, Date.now());
+
+          // Re-add the free 'Toy' if it's not already in the inventory and
+          // happiness is high enough. This is the fixed version of the old
+          // `(happiness => 51)` bug — a real comparison against the CURRENT
+          // state, not a stale closure over the value at mount time.
+          if (!next.inventory.find((item) => item.id === "toy") && next.happiness >= 51) {
+            next = { ...next, inventory: [...next.inventory, FREE_TOY] };
+          }
+
+          stateRef.current = next;
+          saveState(next, { force: true }); // always persist on the decay tick
+          return next;
+        });
+      }, TICK_INTERVAL_MS); // Apply elapsed-time decay + toy regen + persist every ~7s
+    };
+
+    hydrate();
+
+    // Clear interval and do a final save on unmount.
+    return () => {
+      cancelled = true;
+      if (tickId) clearInterval(tickId);
+      if (stateRef.current) {
+        saveState(stateRef.current, { force: true });
       }
     };
-
-    loadHappiness();
-
-    const happinessIntervalId = setInterval(() => {
-      setHappiness((prevHappiness) => {
-        const newHappiness = Math.max(0, prevHappiness - 1);
-        AsyncStorage.setItem("happiness", JSON.stringify(newHappiness));
-        return newHappiness;
-      });
-    }, 6000); // Decrease happiness every minute // Decrease happiness every minute
-
-    // Interval to add 'Toy' item to inventory if it's not already there and pet's happiness is not too high
-    const toyIntervalId = setInterval(() => {
-      setInventory((currentInventory) => {
-        if (!currentInventory.find(item => item.name === "Toy" )&& (happiness => 51)) {
-          return [...currentInventory, { name: "Toy", effect: 20 }];
-        }
-        return currentInventory;
-      });
-    }, 5000); // Re-add 'Toy' every 2 minutes
-
-    // Clear intervals on component unmount
-    return () => {
-      clearInterval(happinessIntervalId);
-      clearInterval(toyIntervalId);
-    };
   }, []);
-  
+
   // Function to play the pet interaction sound.
   const playSound = async () => {
     const { sound } = await Audio.Sound.createAsync(
@@ -90,7 +123,7 @@ const PetApp = () => {
       { shouldPlay: true }
     );
     await sound.playAsync();
-    
+
     sound.setOnPlaybackStatusUpdate(async (status) => {
       if (status.didJustFinish) {
         await sound.unloadAsync();
@@ -102,40 +135,79 @@ const PetApp = () => {
   const handleTap = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.END) {
       console.log("Pet tapped!");
-      setHappiness(prevHappiness => Math.min(100, prevHappiness + 2));
+      setState((prev) => {
+        if (!prev) return prev;
+        const next = petAction(prev); // +2 happiness, small energy cost, points/xp
+        stateRef.current = next;
+        saveState(next);
+        return next;
+      });
       triggerHappyAnimation(); // Trigger animation
       await playSound(); // Play sound
       triggerVibrationFeedback(); // Vibrate
     }
   };
-  
+
   // Function to handle long press gesture on the pet image.
   const handleLongPress = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.ACTIVE) {
       console.log("Pet long-pressed!");
-      setHappiness(prevHappiness => Math.min(100, prevHappiness + 15));
+      setState((prev) => {
+        if (!prev) return prev;
+        const next = playAction(prev); // +15 happiness, bigger energy cost, points/xp
+        stateRef.current = next;
+        saveState(next);
+        return next;
+      });
       triggerHappyAnimation(); // Trigger animation
       await playSound(); // Play sound
       triggerVibrationFeedback(); // Vibrate
     }
   };
-  
-  
+
+
   const handleUseItem = (item) => {
-    // Example: increase happiness with the item's effect
-    setHappiness((current) => Math.min(100, current + item.effect));
-    // Remove item from inventory after use
-    setInventory((current) => current.filter((i) => i !== item));
+    setState((prev) => {
+      if (!prev) return prev;
+      const next = applyItem(prev, item.id); // no-op if item isn't actually held
+      stateRef.current = next;
+      saveState(next);
+      return next;
+    });
   };
+
+  const handleBuy = (item) => {
+    setState((prev) => {
+      if (!prev) return prev;
+      const next = buyItem(prev, item.id); // no-op if points < item.cost
+      stateRef.current = next;
+      saveState(next, { force: true });
+      return next;
+    });
+  };
+
+  if (!state) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={styles.topContainer}>
+          <Text style={styles.text}>Loading…</Text>
+        </View>
+      </GestureHandlerRootView>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.topContainer}>
-        <Text style={styles.text}>Pet Happiness: {happiness}</Text>
-        <Points points={points} />
-        <Inventory inventory={inventory} onUseItem={handleUseItem} />
+        <Text style={styles.text}>{mood(state)} · Level {state.level}</Text>
+        <StatBar label="Happiness" value={state.happiness} color="#4CAF50" />
+        <StatBar label="Hunger" value={state.hunger} color="#E57373" />
+        <StatBar label="Energy" value={state.energy} color="#64B5F6" />
+        <Points points={state.points} />
+        <Inventory inventory={state.inventory} onUseItem={handleUseItem} />
+        <Shop points={state.points} onBuy={handleBuy} />
       </View>
-      
+
       <TapGestureHandler onHandlerStateChange={handleTap}>
         <LongPressGestureHandler
           onHandlerStateChange={handleLongPress}
@@ -161,7 +233,7 @@ const styles = StyleSheet.create({
     // Takes necessary space only, allowing petContainer to be at the bottom
     justifyContent: "flex-start",
     alignItems: "center",
-    
+
   },
   container: {
     flex: 1,
