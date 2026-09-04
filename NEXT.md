@@ -37,9 +37,17 @@
    `PetApp.js`'s tick handler — it's currently the one bit of game logic
    that isn't in the pure module, purely because it was a direct 1:1 bugfix
    of existing inline code.
-4. **Per-stat feeding/animation feedback** — right now `triggerHappyAnimation()`
-   /bark/vibration only fire on tap and long-press; using an item or buying
-   from the Shop has no animated feedback, which makes the Shop feel a bit flat.
+4. ✅ **Per-stat feeding/animation feedback** — done. `components/PetApp.js`
+   now routes tap, long-press, item-use, and Shop buys through a single
+   `applyAction()` helper: the same `triggerHappyAnimation()`/bark/vibration
+   fire for all four, a `<StatFeedback>` toast (new `components/StatFeedback.js`,
+   driven by the new `describeChange()` in `game/petState.js`) shows the
+   per-stat delta (e.g. "Hunger -30", colored by whether the change was
+   good/bad), and no-op actions (item not held / can't afford) produce no
+   feedback at all. Also fixed `saveState()` being called inside `setState`
+   updaters (unsafe under StrictMode) and `handleUseItem`'s save being
+   silently throttled — every action now force-saves exactly once, outside
+   the updater.
 5. **Pet evolution at level 5 (and beyond)** — swap `pixelPuppy.png` for an
    evolved sprite once `state.level` crosses a threshold, using the leveling
    system already in `petState.js`.

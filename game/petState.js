@@ -185,3 +185,63 @@ export function mood(state) {
   if (state.happiness >= 80 && state.hunger < 40 && state.energy > 50) return "Happy";
   return "Content";
 }
+
+// The three stats considered for change-detection/feedback below. Points,
+// xp, level, and inventory are deliberately ignored here.
+const STAT_KEYS = ["happiness", "hunger", "energy"];
+
+// Which direction is an *improvement* for each stat — happiness/energy are
+// better higher, hunger is better lower (see the semantics note at the top
+// of this file).
+export const BETTER_WHEN = {
+  happiness: "higher",
+  energy: "higher",
+  hunger: "lower",
+};
+
+function capitalize(word) {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+// Pure comparison of two state objects (typically "before" and "after" an
+// action like useItem()/buyItem()) for driving user-facing feedback (e.g. a
+// toast). Only happiness/hunger/energy are considered. Deltas are rounded
+// to integers; a stat is skipped if either side isn't a finite number
+// (defensive against partial/corrupt state — never throws). `label` is
+// built from whichever stat moved the most in absolute value (ties keep
+// the first stat encountered in STAT_KEYS order). Returns
+// `{ changed: false, deltas: [], label: "" }` when nothing moved, which
+// covers the no-op useItem()/buyItem() paths that return the same object.
+export function describeChange(prev, next) {
+  if (!prev || !next) return { changed: false, deltas: [], label: "" };
+
+  const deltas = [];
+  for (const stat of STAT_KEYS) {
+    const before = prev[stat];
+    const after = next[stat];
+    if (typeof before !== "number" || Number.isNaN(before)) continue;
+    if (typeof after !== "number" || Number.isNaN(after)) continue;
+
+    const delta = Math.round(after - before);
+    if (delta === 0) continue;
+
+    const direction = delta > 0 ? "higher" : "lower";
+    const good = BETTER_WHEN[stat] === direction;
+    deltas.push({ stat, delta, good });
+  }
+
+  if (deltas.length === 0) return { changed: false, deltas: [], label: "" };
+
+  let biggest = deltas[0];
+  for (const d of deltas) {
+    if (Math.abs(d.delta) > Math.abs(biggest.delta)) biggest = d;
+  }
+
+  const sign = biggest.delta > 0 ? "+" : "";
+  return {
+    changed: true,
+    deltas,
+    label: `${capitalize(biggest.stat)} ${sign}${biggest.delta}`,
+    tone: biggest.good ? "good" : "bad",
+  };
+}

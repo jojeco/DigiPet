@@ -12,6 +12,7 @@ import Inventory from "./Inventory"; // Custom component for managing inventory 
 import Points from "./Points"; // Custom component for displaying points
 import StatBar from "./StatBar"; // Presentational stat bars (happiness/hunger/energy)
 import Shop from "./Shop"; // Buyable items, spends points
+import StatFeedback from "./StatFeedback"; // Floating toast for stat changes from item use / shop buys
 import Bark from "../assets/dogBarking.mp3"; // Sound assets for pet interactions
 import { Audio } from 'expo-av'; // Module for handling audio playback
 import {
@@ -21,6 +22,7 @@ import {
   buyItem,
   applyElapsed,
   mood,
+  describeChange,
 } from "../game/petState"; // Pure game rules — see game/petState.js
 import { loadState, saveState } from "../game/petStorage"; // AsyncStorage persistence
 
@@ -43,8 +45,20 @@ const PetApp = () => {
   // useRef hook to manage the animation scale for the pet image.
   const scaleAnim = useRef(new Animated.Value(1)).current;
   // Keep the latest state in a ref too, so the unmount cleanup can save the
-  // most recent value without needing state in its dependency array.
+  // most recent value without needing state in its dependency array, and so
+  // applyAction() (below) can read the current state from outside setState.
   const stateRef = useRef(null);
+  // Guards setState/setToast calls that could otherwise fire after unmount
+  // (e.g. if a gesture handler resolves its async playSound() late).
+  const isMountedRef = useRef(true);
+  // Monotonic counter used as StatFeedback's `nonce` so an identical toast
+  // message (e.g. using the same item twice) still re-triggers the fade.
+  const toastNonceRef = useRef(0);
+
+  // Floating toast state for item-use / shop-buy feedback. `nonce` is bumped
+  // on every real (non-no-op) action so StatFeedback re-animates even when
+  // the message text repeats.
+  const [toast, setToast] = useState({ message: "", tone: "good", nonce: 0 });
 
   // Function to trigger device vibration as feedback.
   const triggerVibrationFeedback = () => {
@@ -75,6 +89,11 @@ const PetApp = () => {
   useEffect(() => {
     let tickId;
     let cancelled = false;
+    // Re-arm on every effect run, not just at useRef() init: React 18's
+    // StrictMode mounts, tears down, then re-mounts effects in dev, so a ref
+    // that is only ever set to false in the cleanup would stay false for the
+    // rest of the session and silently block every later setState below.
+    isMountedRef.current = true;
 
     const hydrate = async () => {
       const loaded = await loadState();
@@ -109,6 +128,7 @@ const PetApp = () => {
     // Clear interval and do a final save on unmount.
     return () => {
       cancelled = true;
+      isMountedRef.current = false;
       if (tickId) clearInterval(tickId);
       if (stateRef.current) {
         saveState(stateRef.current, { force: true });
@@ -131,20 +151,59 @@ const PetApp = () => {
     });
   };
 
+  // Single entry point for every user action that mutates pet state (tap,
+  // long-press, use-item, shop-buy). Reads the current state from
+  // stateRef (not from a setState updater, since saveState() must run
+  // OUTSIDE the updater — calling it inside is unsafe: React may invoke an
+  // updater more than once under StrictMode/concurrent mode, which would
+  // duplicate the AsyncStorage write). `fn` is one of the pure petState.js
+  // functions; per that module's convention, a no-op action (e.g. using an
+  // item you don't hold, or buying something you can't afford) returns the
+  // SAME object back, which we detect via reference equality and bail out
+  // of early — no state update, no save, no animation/sound/vibration/toast.
+  // `fallbackLabel` covers actions that are real but move none of the three
+  // stats describeChange() watches (a Shop purchase only spends points and
+  // grows the inventory), so they still get a toast.
+  const applyAction = async (fn, options = {}) => {
+    const { animate = true, fallbackLabel = "", fallbackTone = "good" } = options;
+    const prev = stateRef.current;
+    if (!prev) return;
+
+    const next = fn(prev);
+    if (next === prev) {
+      return; // no-op action — nothing changed, nothing to feed back
+    }
+
+    stateRef.current = next;
+    if (isMountedRef.current) setState(next);
+    saveState(next, { force: true }); // force-save exactly once, outside the updater
+
+    const change = describeChange(prev, next);
+    const message = change.changed ? change.label : fallbackLabel;
+    const tone = change.changed ? change.tone : fallbackTone;
+    if (message && isMountedRef.current) {
+      setToast({ message, tone, nonce: toastNonceRef.current++ });
+    }
+
+    if (animate) {
+      triggerHappyAnimation(); // Trigger animation
+      // A failed bark must not reject this handler: Inventory/Shop buttons
+      // now route through here and don't await the promise, so a rejection
+      // would surface as an unhandled one and skip the vibration below.
+      try {
+        await playSound(); // Play sound
+      } catch (err) {
+        console.warn("playSound failed", err);
+      }
+      triggerVibrationFeedback(); // Vibrate
+    }
+  };
+
   // Event handlers for tap and long press gestures on the pet image.
   const handleTap = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.END) {
       console.log("Pet tapped!");
-      setState((prev) => {
-        if (!prev) return prev;
-        const next = petAction(prev); // +2 happiness, small energy cost, points/xp
-        stateRef.current = next;
-        saveState(next);
-        return next;
-      });
-      triggerHappyAnimation(); // Trigger animation
-      await playSound(); // Play sound
-      triggerVibrationFeedback(); // Vibrate
+      await applyAction(petAction); // +2 happiness, small energy cost, points/xp
     }
   };
 
@@ -152,38 +211,20 @@ const PetApp = () => {
   const handleLongPress = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.ACTIVE) {
       console.log("Pet long-pressed!");
-      setState((prev) => {
-        if (!prev) return prev;
-        const next = playAction(prev); // +15 happiness, bigger energy cost, points/xp
-        stateRef.current = next;
-        saveState(next);
-        return next;
-      });
-      triggerHappyAnimation(); // Trigger animation
-      await playSound(); // Play sound
-      triggerVibrationFeedback(); // Vibrate
+      await applyAction(playAction); // +15 happiness, bigger energy cost, points/xp
     }
   };
 
-
-  const handleUseItem = (item) => {
-    setState((prev) => {
-      if (!prev) return prev;
-      const next = applyItem(prev, item.id); // no-op if item isn't actually held
-      stateRef.current = next;
-      saveState(next);
-      return next;
-    });
+  const handleUseItem = async (item) => {
+    await applyAction((prev) => applyItem(prev, item.id)); // no-op if item isn't actually held
   };
 
-  const handleBuy = (item) => {
-    setState((prev) => {
-      if (!prev) return prev;
-      const next = buyItem(prev, item.id); // no-op if points < item.cost
-      stateRef.current = next;
-      saveState(next, { force: true });
-      return next;
-    });
+  const handleBuy = async (item) => {
+    // A purchase moves points/inventory, not happiness/hunger/energy, so it
+    // needs an explicit label — describeChange() would report "no change".
+    await applyAction((prev) => buyItem(prev, item.id), {
+      fallbackLabel: `Bought ${item.name}`,
+    }); // no-op if points < item.cost
   };
 
   if (!state) {
@@ -214,6 +255,9 @@ const PetApp = () => {
           minDurationMs={800}
         >
           <View style={styles.petContainer}>
+          {toast.message ? (
+            <StatFeedback message={toast.message} tone={toast.tone} nonce={toast.nonce} />
+          ) : null}
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
 
             <Image
