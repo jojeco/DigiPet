@@ -21,6 +21,7 @@ import {
   useItem as applyItem,
   buyItem,
   applyElapsed,
+  maybeRegenToy,
   mood,
   describeChange,
 } from "../game/petState"; // Pure game rules — see game/petState.js
@@ -30,11 +31,6 @@ import { loadState, saveState } from "../game/petStorage"; // AsyncStorage persi
 // single interval that replaces the old happiness-decay + toy-regen
 // intervals: it applies elapsed-time decay via applyElapsed() and persists.
 const TICK_INTERVAL_MS = 7000;
-
-// Toy the pet gets back for free once happiness is high enough — this is
-// the mechanic the old `(happiness => 51)` always-truthy bug was supposed
-// to gate but never actually did (an arrow function is always truthy).
-const FREE_TOY = { id: "toy", name: "Toy", effects: { happiness: 50 } };
 
 const PetApp = () => {
   // Single source of truth for the whole pet: stats, points, xp, level,
@@ -104,22 +100,23 @@ const PetApp = () => {
       await saveState(caughtUp, { force: true });
 
       tickId = setInterval(() => {
-        setState((prev) => {
-          if (!prev) return prev;
-          let next = applyElapsed(prev, Date.now());
+        // Read from stateRef (not a setState updater) so saveState() below
+        // can run OUTSIDE the updater — same StrictMode-safety reasoning as
+        // applyAction() above: React may invoke an updater more than once,
+        // which would duplicate the AsyncStorage write.
+        const prev = stateRef.current;
+        if (!prev) return;
+        const now = Date.now();
+        let next = applyElapsed(prev, now);
+        // Re-add the free Toy once its cooldown (set by useItem() when it
+        // was last consumed) has elapsed — see maybeRegenToy() in
+        // game/petState.js. No-ops (returns the same reference) when a
+        // regen isn't due yet.
+        next = maybeRegenToy(next, now);
 
-          // Re-add the free 'Toy' if it's not already in the inventory and
-          // happiness is high enough. This is the fixed version of the old
-          // `(happiness => 51)` bug — a real comparison against the CURRENT
-          // state, not a stale closure over the value at mount time.
-          if (!next.inventory.find((item) => item.id === "toy") && next.happiness >= 51) {
-            next = { ...next, inventory: [...next.inventory, FREE_TOY] };
-          }
-
-          stateRef.current = next;
-          saveState(next, { force: true }); // always persist on the decay tick
-          return next;
-        });
+        stateRef.current = next;
+        if (isMountedRef.current) setState(next);
+        saveState(next, { force: true }); // always persist on the decay tick
       }, TICK_INTERVAL_MS); // Apply elapsed-time decay + toy regen + persist every ~7s
     };
 
@@ -216,7 +213,12 @@ const PetApp = () => {
   };
 
   const handleUseItem = async (item) => {
-    await applyAction((prev) => applyItem(prev, item.id)); // no-op if item isn't actually held
+    // fallbackLabel covers a no-op *stat* change (e.g. using the toy at
+    // 100 happiness already) — describeChange() would report "no change"
+    // even though the item really was consumed.
+    await applyAction((prev) => applyItem(prev, item.id), {
+      fallbackLabel: `Used ${item.name}`,
+    }); // no-op entirely if item isn't actually held
   };
 
   const handleBuy = async (item) => {

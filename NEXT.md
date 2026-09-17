@@ -51,3 +51,27 @@
 5. **Pet evolution at level 5 (and beyond)** — swap `pixelPuppy.png` for an
    evolved sprite once `state.level` crosses a threshold, using the leveling
    system already in `petState.js`.
+6. ✅ **Move the free-toy regen check into `game/petState.js`** — done. The
+   toy now has a real cooldown (`TOY_REGEN_COOLDOWN_MS`, ~10 minutes) instead
+   of the always-truthy `happiness >= 51` check, tracked via a
+   `toyAvailableAt` timestamp stamped by `useItem()` and consumed by the new
+   pure `maybeRegenToy()`. `PetApp.js`'s tick effect calls it instead of
+   inlining the logic, and its `saveState()` call was moved outside the
+   `setState` updater (mirroring `applyAction()`) for the same StrictMode
+   reason. Also added `scripts/check-petstate.mjs` — the repo's first real
+   automated check, wired to `npm test`.
+7. **No real test framework yet, just the one plain script.**
+   `scripts/check-petstate.mjs` is hand-rolled (no runner, no watch mode, no
+   per-test isolation reporting) — it's a real improvement over the old
+   ad-hoc `node -e` check but still just one big script with a shared
+   assertion counter. A minimal test runner (even something dependency-free
+   like Node's built-in `node:test`, which ships with Node 18+ and needs no
+   npm install) would give per-assertion pass/fail output instead of
+   stop-on-first-failure.
+8. **Toy cooldown length isn't configurable or visible in the UI.**
+   `TOY_REGEN_COOLDOWN_MS` is a hardcoded constant in `petState.js` — there's
+   no way for a player to see "toy back in 7 minutes" anywhere in the UI (no
+   countdown, no indicator), so the only feedback is the toy silently
+   reappearing in the Inventory list. A small countdown next to the
+   Inventory (using `state.toyAvailableAt`, already on state) would close
+   that gap without touching game logic.

@@ -41,6 +41,17 @@ export const SHOP_ITEMS = [
   { id: "napmat", name: "Nap Mat", cost: 20, effects: { energy: 40 } },
 ];
 
+// The free Toy the pet starts with and regains after a cooldown once used
+// (see useItem()/maybeRegenToy() below). Exact shape preserved from where
+// this used to live inline in components/PetApp.js.
+export const FREE_TOY = { id: "toy", name: "Toy", effects: { happiness: 50 } };
+
+// How long after consuming the free Toy it takes to come back (~10 minutes).
+// Replaces the old always-truthy `(happiness => 51)` bug in PetApp.js, which
+// regenerated the toy on every tick once happiness was high enough — and
+// using the toy gives +50 happiness, so it created an unlimited-farming loop.
+export const TOY_REGEN_COOLDOWN_MS = 10 * 60 * 1000;
+
 export function clamp(value, min, max) {
   if (typeof value !== "number" || Number.isNaN(value)) return min;
   return Math.min(max, Math.max(min, value));
@@ -55,7 +66,7 @@ export function createInitialState(nowMs = Date.now()) {
     points: 0,
     xp: 0,
     level: 1,
-    inventory: [{ id: "toy", name: "Toy", effects: { happiness: 50 } }],
+    inventory: [FREE_TOY],
     lastSeen: nowMs,
   };
 }
@@ -144,8 +155,10 @@ export function interact(state, kind) {
 
 // Applies an inventory item's effects to the matching stats and removes one
 // instance of it from the inventory. No-op (returns the SAME state) if the
-// item isn't held.
-export function useItem(state, itemId) {
+// item isn't held. When the consumed item is specifically the free Toy,
+// also stamps `toyAvailableAt` so maybeRegenToy() knows when it's allowed
+// to come back — see the cooldown note on TOY_REGEN_COOLDOWN_MS above.
+export function useItem(state, itemId, nowMs = Date.now()) {
   const idx = state.inventory.findIndex((item) => item.id === itemId);
   if (idx === -1) return state;
 
@@ -160,7 +173,40 @@ export function useItem(state, itemId) {
 
   const nextInventory = state.inventory.slice(0, idx).concat(state.inventory.slice(idx + 1));
 
-  return { ...state, ...nextStats, inventory: nextInventory };
+  const next = { ...state, ...nextStats, inventory: nextInventory };
+  if (item.id === FREE_TOY.id) {
+    next.toyAvailableAt = nowMs + TOY_REGEN_COOLDOWN_MS;
+  }
+  return next;
+}
+
+// Re-adds the free Toy to the inventory once its cooldown has elapsed.
+// Returns the SAME object reference (matching this module's no-op
+// convention, e.g. useItem()/buyItem() above) when a regen isn't due yet,
+// so callers can bail out via `===` without an extra state update/save.
+//
+// "Due" means: toyAvailableAt is set (a real timestamp — see the legacy
+// note below) AND nowMs has reached it AND the toy isn't already held.
+export function maybeRegenToy(state, nowMs = Date.now()) {
+  const toyAvailableAt = state.toyAvailableAt;
+  // Legacy/older saved states predate this field entirely. Never crash and
+  // never insta-regen off a missing field — but don't strand the player
+  // either: a save that has no toy AND no timestamp (possible under the old
+  // happiness-gated regen, which never fired below 51 happiness) would
+  // otherwise never get the free toy back at all. Start the clock from now
+  // so it returns one cooldown later, exactly like a normal use.
+  if (typeof toyAvailableAt !== "number" || Number.isNaN(toyAvailableAt)) {
+    if (state.inventory.find((item) => item.id === FREE_TOY.id)) return state;
+    return { ...state, toyAvailableAt: nowMs + TOY_REGEN_COOLDOWN_MS };
+  }
+  if (nowMs < toyAvailableAt) return state;
+  if (state.inventory.find((item) => item.id === FREE_TOY.id)) return state;
+
+  return {
+    ...state,
+    inventory: [...state.inventory, FREE_TOY],
+    toyAvailableAt: null,
+  };
 }
 
 // Spends points on a shop item (looked up by id in SHOP_ITEMS) and adds it

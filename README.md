@@ -3,8 +3,8 @@ other than that you should only have to npm install and the app should work.
 
 This is a DigiPet app, Like a tamagotchi but not because of copyright
 
-Press on the dog to pat him and his happiness goes up, long press and it goes up even more, he has a treat that comes back after awhile if his happiness is over 50.
-and that makes him even happier, He will do a little jump when he is played with and bark too, even your phone will vibrate. Using an item from
+Press on the dog to pat him and his happiness goes up, long press and it goes up even more, he has a toy that makes him even happier — once you use it, it comes back on a cooldown of about 10 minutes.
+He will do a little jump when he is played with and bark too, even your phone will vibrate. Using an item from
 the Inventory or buying something in the Shop triggers the same jump/bark/vibrate feedback, plus a little floating toast — for an item it shows
 which stat changed (green if it's an improvement, red if not), and for a purchase it confirms what you bought. Nothing happens at all if the
 action was a no-op (item not held, or can't afford the purchase).
