@@ -68,10 +68,21 @@
    like Node's built-in `node:test`, which ships with Node 18+ and needs no
    npm install) would give per-assertion pass/fail output instead of
    stop-on-first-failure.
-8. **Toy cooldown length isn't configurable or visible in the UI.**
-   `TOY_REGEN_COOLDOWN_MS` is a hardcoded constant in `petState.js` — there's
-   no way for a player to see "toy back in 7 minutes" anywhere in the UI (no
-   countdown, no indicator), so the only feedback is the toy silently
-   reappearing in the Inventory list. A small countdown next to the
-   Inventory (using `state.toyAvailableAt`, already on state) would close
-   that gap without touching game logic.
+8. ✅ **Show the toy cooldown in the UI** — done. New presentational
+   `components/ToyCooldown.js` renders "Toy back in m:ss" under the
+   Inventory while the toy is on cooldown (and "Toy coming back…" in the
+   brief gap before the tick restores it, never "0:00"). It keeps its own 1s
+   clock only while there's something to count down, so `PetApp.js` gained no
+   interval. Driven by the new pure `toyCooldownRemainingMs()` /
+   `formatCooldown()` in `game/petState.js`, asserted in
+   `scripts/check-petstate.mjs`. The component itself is not machine-tested
+   (no RN test setup — see item 2).
+9. **Make the toy cooldown length configurable.** `TOY_REGEN_COOLDOWN_MS` is
+   still a hardcoded constant; a difficulty/settings option (or per-level
+   scaling) would be a small change now that the countdown reads it live.
+10. **Component-level tests for `ToyCooldown`.** Once Jest +
+    `@testing-library/react-native` exist (item 2), add a fake-timers test
+    that the interval starts only while counting and is cleared on unmount.
+11. **Countdown feedback on toy return.** Fire the existing
+    `applyAction()`-style bark/toast when the toy reappears so the player
+    notices it's back without watching the Inventory.

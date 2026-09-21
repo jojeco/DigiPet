@@ -16,6 +16,8 @@ import {
   buyItem,
   describeChange,
   maybeRegenToy,
+  toyCooldownRemainingMs,
+  formatCooldown,
   FREE_TOY,
   TOY_REGEN_COOLDOWN_MS,
   SHOP_ITEMS,
@@ -177,6 +179,55 @@ assert(clamp(NaN, 0, 100) === 0, "clamp() should treat NaN as min");
   delete legacyHolding.toyAvailableAt;
   const result = maybeRegenToy(legacyHolding, BASE_NOW + 999_999_999);
   assert(result === legacyHolding, "legacy state already holding the toy should be an exact no-op");
+}
+
+// toyCooldownRemainingMs() / formatCooldown() — the pure helpers behind the countdown UI.
+{
+  const used = useItem(createInitialState(BASE_NOW), "toy", BASE_NOW); // toy consumed, cooldown stamped
+  assert(!used.inventory.some((i) => i.id === "toy"), "sanity: using the toy should remove it");
+
+  // Future timestamp -> exact remaining, integer.
+  assert(
+    toyCooldownRemainingMs(used, BASE_NOW) === TOY_REGEN_COOLDOWN_MS,
+    "full cooldown should remain right after using the toy"
+  );
+  assert(
+    toyCooldownRemainingMs(used, BASE_NOW + 192_000) === TOY_REGEN_COOLDOWN_MS - 192_000,
+    "remaining should shrink by the elapsed time"
+  );
+  assert(Number.isInteger(toyCooldownRemainingMs(used, BASE_NOW + 1234.5)), "remaining should be an integer number of ms");
+
+  // Past / exactly-due timestamp -> 0, never negative.
+  assert(toyCooldownRemainingMs(used, BASE_NOW + TOY_REGEN_COOLDOWN_MS) === 0, "remaining should be 0 exactly at the deadline");
+  assert(toyCooldownRemainingMs(used, BASE_NOW + TOY_REGEN_COOLDOWN_MS + 5_000_000) === 0, "remaining must never go negative");
+
+  // Toy held -> 0 even with a (stale) future toyAvailableAt.
+  const holding = { ...createInitialState(BASE_NOW), toyAvailableAt: BASE_NOW + 999_999 };
+  assert(toyCooldownRemainingMs(holding, BASE_NOW) === 0, "holding the toy should mean 0 remaining regardless of toyAvailableAt");
+
+  // Missing / null / NaN toyAvailableAt with no toy -> 0, no crash (legacy saves).
+  const noToy = { ...used, inventory: [] };
+  assert(toyCooldownRemainingMs({ ...noToy, toyAvailableAt: null }, BASE_NOW) === 0, "null toyAvailableAt should be 0");
+  assert(toyCooldownRemainingMs({ ...noToy, toyAvailableAt: undefined }, BASE_NOW) === 0, "undefined toyAvailableAt should be 0");
+  assert(toyCooldownRemainingMs({ ...noToy, toyAvailableAt: NaN }, BASE_NOW) === 0, "NaN toyAvailableAt should be 0");
+  const legacy = { ...noToy };
+  delete legacy.toyAvailableAt;
+  let legacyRemaining;
+  try {
+    legacyRemaining = toyCooldownRemainingMs(legacy, BASE_NOW);
+  } catch (err) {
+    console.error(`FAIL: toyCooldownRemainingMs() crashed on a legacy state without toyAvailableAt: ${err}`);
+    process.exit(1);
+  }
+  assert(legacyRemaining === 0, "legacy state with toyAvailableAt deleted should be 0");
+
+  // formatCooldown() — m:ss with zero-padded seconds.
+  assert(formatCooldown(61_000) === "1:01", "61000ms should format as 1:01");
+  assert(formatCooldown(0) === "0:00", "0ms should format as 0:00");
+  assert(formatCooldown(9_000) === "0:09", "seconds should be zero-padded");
+  assert(formatCooldown(TOY_REGEN_COOLDOWN_MS) === "10:00", "the full cooldown should format as 10:00");
+  assert(formatCooldown(-500) === "0:00", "negative durations should clamp to 0:00");
+  assert(formatCooldown(1) === "0:01", "a sub-second remainder should round up, never show 0:00 while counting");
 }
 
 // FREE_TOY shape sanity — guards against an accidental shape change during the move.

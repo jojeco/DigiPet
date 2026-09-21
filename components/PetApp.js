@@ -11,6 +11,7 @@ import {
 import Inventory from "./Inventory"; // Custom component for managing inventory items
 import Points from "./Points"; // Custom component for displaying points
 import StatBar from "./StatBar"; // Presentational stat bars (happiness/hunger/energy)
+import ToyCooldown from "./ToyCooldown"; // Countdown until the free toy is back (display only, owns its own 1s clock)
 import Shop from "./Shop"; // Buyable items, spends points
 import StatFeedback from "./StatFeedback"; // Floating toast for stat changes from item use / shop buys
 import Bark from "../assets/dogBarking.mp3"; // Sound assets for pet interactions
@@ -248,6 +249,10 @@ const PetApp = () => {
         <StatBar label="Energy" value={state.energy} color="#64B5F6" />
         <Points points={state.points} />
         <Inventory inventory={state.inventory} onUseItem={handleUseItem} />
+        <ToyCooldown
+          toyAvailableAt={state.toyAvailableAt}
+          hasToy={state.inventory.some((i) => i.id === "toy")}
+        />
         <Shop points={state.points} onBuy={handleBuy} />
       </View>
 

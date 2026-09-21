@@ -209,6 +209,29 @@ export function maybeRegenToy(state, nowMs = Date.now()) {
   };
 }
 
+// How many whole milliseconds are left until the free Toy is due back, for
+// display purposes only (it never changes state — maybeRegenToy() owns that).
+// Returns 0 when there is nothing to count down: the toy is already held
+// (regardless of any stale toyAvailableAt), toyAvailableAt is missing/NaN
+// (legacy saves — same guard as maybeRegenToy()), or the deadline has passed.
+// Never negative, always an integer.
+export function toyCooldownRemainingMs(state, nowMs = Date.now()) {
+  if (state.inventory.some((item) => item.id === FREE_TOY.id)) return 0;
+  const toyAvailableAt = state.toyAvailableAt;
+  if (typeof toyAvailableAt !== "number" || Number.isNaN(toyAvailableAt)) return 0;
+  return Math.max(0, Math.ceil(toyAvailableAt - nowMs));
+}
+
+// Formats a millisecond duration as "m:ss" (61000 -> "1:01"). Rounds UP to
+// the next whole second so a countdown never reads "0:00" while time is
+// still left, and clamps negative/non-finite input to "0:00".
+export function formatCooldown(ms) {
+  const totalSeconds = Number.isFinite(ms) && ms > 0 ? Math.ceil(ms / 1000) : 0;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 // Spends points on a shop item (looked up by id in SHOP_ITEMS) and adds it
 // to the inventory. Rejected (returns the SAME state) if the item doesn't
 // exist or points are insufficient — points must never go negative.
