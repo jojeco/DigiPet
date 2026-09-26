@@ -19,6 +19,24 @@
 - `components/Shop.js` — new catalogue UI (Treat/Ball/Bone/Nap Mat), wired to
   the pure `buyItem()`.
 - Points are finally earnable (tap/long-press) and spendable (Shop).
+- ✅ **Achievements/milestones system.** New `game/achievements.js` — a pure,
+  import-free `ACHIEVEMENTS` catalogue (first pet, 50 pets, 10 plays, first
+  purchase, 5 items used, level 5, level 10, 200 points banked, max
+  happiness, 5 toy uses), `recordEvent()` to bump lifetime `state.stats`
+  counters, `checkAchievements()` to unlock+pay out newly-qualifying ones
+  (idempotent — an id in `state.achievements` is never re-tested or
+  re-paid), and `achievementProgress()` for UI display. `createInitialState()`
+  gained `stats: {}` / `achievements: {}`, and a new `normalizeState()`
+  upgrades an old save to have both without touching any of its real
+  progress — `game/petStorage.js`'s `loadState()` now routes every return
+  path through it. `components/PetApp.js`'s `applyAction()` records the
+  right event kind per action and runs `checkAchievements()` after, and any
+  newly-unlocked achievement takes over the existing `StatFeedback` toast
+  slot for that action. New presentational `components/Achievements.js`
+  (locked/unlocked, progress, unlock date), toggled by a button next to Shop.
+  Reward points are paid via the existing `awardPoints()` — no parallel
+  points path. Covered by new `scripts/check-achievements.mjs`, wired into
+  `npm test` alongside `check-petstate.mjs`.
 
 ## Follow-ups (not done, deliberately out of scope this pass)
 
@@ -86,3 +104,28 @@
 11. **Countdown feedback on toy return.** Fire the existing
     `applyAction()`-style bark/toast when the toy reappears so the player
     notices it's back without watching the Inventory.
+12. **Achievement toast queueing.** When one `applyAction()` call produces
+    both a real stat delta AND one or more achievement unlocks, the unlock
+    message currently wins the single `StatFeedback` toast slot outright and
+    the stat delta for that same action is silently dropped. A small
+    multi-message queue (even just "show stat delta, then unlock, 1s apart")
+    would surface both instead of picking one.
+13. **Achievements screen is inline, not a dedicated screen/modal.**
+    `showAchievements` just toggles `components/Achievements.js` in place
+    under Shop — fine today, but will want a real modal or nav route once
+    the screen has more going on than a scrollable list.
+14. **Progress bars for achievements, not just "current / target" text.**
+    `Achievements.js` renders progress as plain text; reusing `StatBar.js`'s
+    filled-track pattern would make locked-achievement progress readable at
+    a glance instead of requiring the player to do the division.
+15. **A toy-return-timed achievement, once item 11 ships.** `toy_five`
+    (added this pass) only counts total Toy uses and is deliberately not
+    tied to the cooldown/regen mechanic. Once "countdown feedback on toy
+    return" (item 11) exists, a "used the toy right as it came back"
+    achievement could build on top of it.
+16. **Fresh saves unlock "Pure Joy" on the very first tap.**
+    `createInitialState()` starts happiness at `STAT_MAX`, so a brand new
+    pet's first action unlocks both `first_pet` and `max_happiness`. Harmless
+    (both toasts are shown together), but consider starting happiness below
+    max or requiring the player to *raise* it to max. Also: the list is
+    capped at 240px and scrolls, but has not been checked on a real device.

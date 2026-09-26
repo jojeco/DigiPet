@@ -68,6 +68,34 @@ export function createInitialState(nowMs = Date.now()) {
     level: 1,
     inventory: [FREE_TOY],
     lastSeen: nowMs,
+    // Lifetime event counters (e.g. { pets: 3, plays: 1 }) and achievement
+    // unlock stamps (e.g. { first_pet: 1700000000000 }) — see
+    // game/achievements.js. Both start empty; normalizeState() below is how
+    // an old save that predates this feature gets them filled in.
+    stats: {},
+    achievements: {},
+  };
+}
+
+// Brings a loaded (possibly legacy-shaped) state up to the current shape
+// WITHOUT dropping or resetting any real progress it already has: every
+// field the candidate object already has wins over the default, and only
+// fields that are genuinely missing (old saves from before this field
+// existed) get filled in from createInitialState(). `stats`/`achievements`
+// specifically are always normalized to plain objects — defaulted to {}
+// when absent, but with their existing counters/unlocks fully preserved
+// when present. Safe against a missing/non-object candidate entirely.
+export function normalizeState(state, nowMs = Date.now()) {
+  if (!state || typeof state !== "object") {
+    return createInitialState(nowMs);
+  }
+
+  const defaults = createInitialState(nowMs);
+  return {
+    ...defaults,
+    ...state,
+    stats: { ...(state.stats || {}) },
+    achievements: { ...(state.achievements || {}) },
   };
 }
 

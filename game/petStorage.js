@@ -6,7 +6,7 @@
 // never crashes the app.
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createInitialState, SCHEMA_VERSION } from "./petState";
+import { createInitialState, normalizeState, SCHEMA_VERSION } from "./petState";
 
 export const STORAGE_KEY = "digipet:state:v2";
 const LEGACY_HAPPINESS_KEY = "happiness";
@@ -35,13 +35,16 @@ function isValidState(candidate) {
 // fresh state with that happiness value, persists it under the new key, and
 // leaves the old key in place (never deletes user data). On any missing or
 // corrupt data, resolves to a valid createInitialState() without throwing.
+// Every return path is routed through normalizeState() so a save from
+// before `stats`/`achievements` existed (or any other future field) comes
+// out with those fields defaulted without losing its real progress.
 export async function loadState() {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (raw !== null) {
       const parsed = JSON.parse(raw);
       if (isValidState(parsed)) {
-        return parsed;
+        return normalizeState(parsed);
       }
       // Corrupt/unexpected shape — fall through to a fresh state below.
     } else {
@@ -49,14 +52,14 @@ export async function loadState() {
       const legacyRaw = await AsyncStorage.getItem(LEGACY_HAPPINESS_KEY);
       if (legacyRaw !== null) {
         const legacyHappiness = JSON.parse(legacyRaw);
-        const migrated = {
+        const migrated = normalizeState({
           ...createInitialState(),
           version: SCHEMA_VERSION,
           happiness:
             typeof legacyHappiness === "number" && !Number.isNaN(legacyHappiness)
               ? legacyHappiness
               : createInitialState().happiness,
-        };
+        });
         await saveState(migrated, { force: true });
         return migrated;
       }

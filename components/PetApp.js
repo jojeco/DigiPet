@@ -1,7 +1,7 @@
 // Importing necessary modules and components from React, React Native,
 // gesture handlers for interactive animations, and sound management from expo-av.
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Image, Animated, Vibration } from "react-native"; // Corrected import
+import { View, Text, Button, StyleSheet, Image, Animated, Vibration } from "react-native"; // Corrected import
 import {
   TapGestureHandler,
   LongPressGestureHandler,
@@ -14,6 +14,7 @@ import StatBar from "./StatBar"; // Presentational stat bars (happiness/hunger/e
 import ToyCooldown from "./ToyCooldown"; // Countdown until the free toy is back (display only, owns its own 1s clock)
 import Shop from "./Shop"; // Buyable items, spends points
 import StatFeedback from "./StatFeedback"; // Floating toast for stat changes from item use / shop buys
+import Achievements from "./Achievements"; // Presentational achievements list
 import Bark from "../assets/dogBarking.mp3"; // Sound assets for pet interactions
 import { Audio } from 'expo-av'; // Module for handling audio playback
 import {
@@ -26,6 +27,7 @@ import {
   mood,
   describeChange,
 } from "../game/petState"; // Pure game rules — see game/petState.js
+import { recordEvent, checkAchievements, achievementProgress } from "../game/achievements"; // Milestones system, built on the same pure-state convention
 import { loadState, saveState } from "../game/petStorage"; // AsyncStorage persistence
 
 // How often the "time passes" tick runs while the app is open. This is the
@@ -56,6 +58,10 @@ const PetApp = () => {
   // on every real (non-no-op) action so StatFeedback re-animates even when
   // the message text repeats.
   const [toast, setToast] = useState({ message: "", tone: "good", nonce: 0 });
+
+  // Whether the achievements list is currently shown. Toggled by a button
+  // rendered alongside Shop — see the JSX below.
+  const [showAchievements, setShowAchievements] = useState(false);
 
   // Function to trigger device vibration as feedback.
   const triggerVibrationFeedback = () => {
@@ -162,23 +168,43 @@ const PetApp = () => {
   // `fallbackLabel` covers actions that are real but move none of the three
   // stats describeChange() watches (a Shop purchase only spends points and
   // grows the inventory), so they still get a toast.
+  // `kinds` lists which lifetime achievements/achievements.js stat counters
+  // this action should bump (e.g. ["pets"], ["purchases"]) — see
+  // game/achievements.js's recordEvent(). After bumping, checkAchievements()
+  // runs against the resulting state; any newly-unlocked achievements take
+  // over the toast slot for this action (see below) since an unlock is more
+  // noteworthy than the underlying stat delta that triggered it.
   const applyAction = async (fn, options = {}) => {
-    const { animate = true, fallbackLabel = "", fallbackTone = "good" } = options;
+    const { animate = true, fallbackLabel = "", fallbackTone = "good", kinds = [] } = options;
     const prev = stateRef.current;
     if (!prev) return;
 
-    const next = fn(prev);
+    let next = fn(prev);
     if (next === prev) {
       return; // no-op action — nothing changed, nothing to feed back
     }
+
+    for (const kind of kinds) {
+      next = recordEvent(next, kind);
+    }
+    const { state: withAchievements, unlocked } = checkAchievements(next, Date.now());
+    next = withAchievements;
 
     stateRef.current = next;
     if (isMountedRef.current) setState(next);
     saveState(next, { force: true }); // force-save exactly once, outside the updater
 
     const change = describeChange(prev, next);
-    const message = change.changed ? change.label : fallbackLabel;
-    const tone = change.changed ? change.tone : fallbackTone;
+    let message = change.changed ? change.label : fallbackLabel;
+    let tone = change.changed ? change.tone : fallbackTone;
+    if (unlocked.length > 0) {
+      // Surface EVERY newly-unlocked achievement by name (not just a count),
+      // even when several unlock from the same action (e.g. reaching level
+      // 10 unlocks both "level_5" and "level_10" at once).
+      const names = unlocked.map((a) => a.name).join(", ");
+      message = `Achievement${unlocked.length > 1 ? "s" : ""} unlocked: ${names}`;
+      tone = "good";
+    }
     if (message && isMountedRef.current) {
       setToast({ message, tone, nonce: toastNonceRef.current++ });
     }
@@ -201,7 +227,7 @@ const PetApp = () => {
   const handleTap = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.END) {
       console.log("Pet tapped!");
-      await applyAction(petAction); // +2 happiness, small energy cost, points/xp
+      await applyAction(petAction, { kinds: ["pets"] }); // +2 happiness, small energy cost, points/xp
     }
   };
 
@@ -209,16 +235,19 @@ const PetApp = () => {
   const handleLongPress = async ({ nativeEvent }) => {
     if (nativeEvent.state === State.ACTIVE) {
       console.log("Pet long-pressed!");
-      await applyAction(playAction); // +15 happiness, bigger energy cost, points/xp
+      await applyAction(playAction, { kinds: ["plays"] }); // +15 happiness, bigger energy cost, points/xp
     }
   };
 
   const handleUseItem = async (item) => {
     // fallbackLabel covers a no-op *stat* change (e.g. using the toy at
     // 100 happiness already) — describeChange() would report "no change"
-    // even though the item really was consumed.
+    // even though the item really was consumed. Every real item use counts
+    // toward "itemsUsed"; the free Toy specifically also counts toward
+    // "toysUsed" (a separate lifetime counter, unrelated to its cooldown).
     await applyAction((prev) => applyItem(prev, item.id), {
       fallbackLabel: `Used ${item.name}`,
+      kinds: item.id === "toy" ? ["itemsUsed", "toysUsed"] : ["itemsUsed"],
     }); // no-op entirely if item isn't actually held
   };
 
@@ -227,6 +256,7 @@ const PetApp = () => {
     // needs an explicit label — describeChange() would report "no change".
     await applyAction((prev) => buyItem(prev, item.id), {
       fallbackLabel: `Bought ${item.name}`,
+      kinds: ["purchases"],
     }); // no-op if points < item.cost
   };
 
@@ -254,6 +284,11 @@ const PetApp = () => {
           hasToy={state.inventory.some((i) => i.id === "toy")}
         />
         <Shop points={state.points} onBuy={handleBuy} />
+        <Button
+          title={showAchievements ? "Hide Achievements" : "Achievements"}
+          onPress={() => setShowAchievements((prevShown) => !prevShown)}
+        />
+        {showAchievements ? <Achievements items={achievementProgress(state)} /> : null}
       </View>
 
       <TapGestureHandler onHandlerStateChange={handleTap}>
