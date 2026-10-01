@@ -114,10 +114,13 @@
     `showAchievements` just toggles `components/Achievements.js` in place
     under Shop — fine today, but will want a real modal or nav route once
     the screen has more going on than a scrollable list.
-14. **Progress bars for achievements, not just "current / target" text.**
-    `Achievements.js` renders progress as plain text; reusing `StatBar.js`'s
-    filled-track pattern would make locked-achievement progress readable at
-    a glance instead of requiring the player to do the division.
+14. ✅ **Progress bars for achievements, not just "current / target" text** —
+    done. Each row in `components/Achievements.js` now renders a thin
+    filled-track bar under the "current / target" text, mirroring
+    `StatBar.js`'s track/fill visual pattern (declared as local styles, not
+    imported). Width is the clamped current/target percentage, guarded
+    against a missing/zero target or NaN; unlocked rows always show a full
+    bar in a distinct "done" colour.
 15. **A toy-return-timed achievement, once item 11 ships.** `toy_five`
     (added this pass) only counts total Toy uses and is deliberately not
     tied to the cooldown/regen mechanic. Once "countdown feedback on toy

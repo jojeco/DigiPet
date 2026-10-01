@@ -16,25 +16,47 @@ const Achievements = ({ items }) => {
       <Text style={styles.title}>Achievements</Text>
       {/* Capped + scrollable so 10 rows never push the pet off-screen on small phones. */}
       <ScrollView style={styles.list} nestedScrollEnabled>
-      {items.map((item) => (
-        <View key={item.id} style={[styles.row, item.unlocked && styles.rowUnlocked]}>
-          <Text style={styles.name}>
-            {item.unlocked ? "✓ " : "• "}
-            {item.name}
-          </Text>
-          <Text style={styles.description}>{item.description}</Text>
-          {item.progress && typeof item.progress.current === "number" ? (
-            <Text style={styles.progress}>
-              {Math.min(item.progress.current, item.progress.target)} / {item.progress.target}
+      {items.map((item) => {
+        const hasProgress = item.progress && typeof item.progress.current === "number";
+        // Guard against a missing/zero target or NaN division so we never render a "NaN%" width.
+        const rawPct = hasProgress && item.progress.target
+          ? (item.progress.current / item.progress.target) * 100
+          : 0;
+        const pct = item.unlocked
+          ? 100
+          : Math.max(0, Math.min(100, Number.isFinite(rawPct) ? rawPct : 0));
+
+        return (
+          <View key={item.id} style={[styles.row, item.unlocked && styles.rowUnlocked]}>
+            <Text style={styles.name}>
+              {item.unlocked ? "✓ " : "• "}
+              {item.name}
             </Text>
-          ) : null}
-          {item.unlocked && item.unlockedAt ? (
-            <Text style={styles.timestamp}>
-              Unlocked {new Date(item.unlockedAt).toLocaleDateString()}
-            </Text>
-          ) : null}
-        </View>
-      ))}
+            <Text style={styles.description}>{item.description}</Text>
+            {hasProgress ? (
+              <>
+                <Text style={styles.progress}>
+                  {Math.min(item.progress.current, item.progress.target)} / {item.progress.target}
+                </Text>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: `${pct}%` },
+                      item.unlocked && styles.progressFillDone,
+                    ]}
+                  />
+                </View>
+              </>
+            ) : null}
+            {item.unlocked && item.unlockedAt ? (
+              <Text style={styles.timestamp}>
+                Unlocked {new Date(item.unlockedAt).toLocaleDateString()}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
       </ScrollView>
     </View>
   );
@@ -73,6 +95,22 @@ const styles = StyleSheet.create({
   progress: {
     fontSize: 12,
     color: "#333",
+  },
+  progressTrack: {
+    height: 5,
+    width: "100%",
+    backgroundColor: "#ddd",
+    borderRadius: 3,
+    overflow: "hidden",
+    marginTop: 2,
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 3,
+    backgroundColor: "#4CAF50",
+  },
+  progressFillDone: {
+    backgroundColor: "#2e7d32",
   },
   timestamp: {
     fontSize: 11,
