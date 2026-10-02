@@ -15,7 +15,7 @@
     "expo": "^49.0.23",
     "expo-status-bar": "~1.6.0",
     "lodash": "4.18.1",
-    "moment": "^2.29.1",
+    "moment": "^2.31.0",
     "prettier": "^2.4.1",
     "react": "18.2.0",
     "react-native": "0.72.10",
