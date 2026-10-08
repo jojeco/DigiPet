@@ -126,9 +126,16 @@
     tied to the cooldown/regen mechanic. Once "countdown feedback on toy
     return" (item 11) exists, a "used the toy right as it came back"
     achievement could build on top of it.
-16. **Fresh saves unlock "Pure Joy" on the very first tap.**
-    `createInitialState()` starts happiness at `STAT_MAX`, so a brand new
-    pet's first action unlocks both `first_pet` and `max_happiness`. Harmless
-    (both toasts are shown together), but consider starting happiness below
-    max or requiring the player to *raise* it to max. Also: the list is
+16. ✅ **Fresh saves no longer unlock "Pure Joy" on the very first tap** —
+    done. `createInitialState()` used to start happiness at `STAT_MAX`
+    itself, so a brand new pet's first action unlocked both `first_pet` and
+    `max_happiness` together, making the latter meaningless. It now starts
+    at a new `INITIAL_HAPPINESS` (80), exported next to `STAT_MAX` in
+    `game/petState.js`, so `max_happiness` actually has to be earned. 80
+    still lands on the "Happy" mood tier given a fresh pet's hunger (0) and
+    energy (100). `scripts/check-petstate.mjs`'s decay/mutation assertions
+    were updated to use the constant instead of a hardcoded 100, and
+    `scripts/check-achievements.mjs` gained an assertion that a freshly
+    created state never has `max_happiness` unlocked (plus
+    `INITIAL_HAPPINESS < STAT_MAX`). Still open: the achievements list is
     capped at 240px and scrolls, but has not been checked on a real device.

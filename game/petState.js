@@ -19,6 +19,10 @@ export const STAT_MAX = 100;
 export const STAT_MIN = 0;
 export const SCHEMA_VERSION = 2;
 
+// Fresh pets start below STAT_MAX so the "max_happiness" achievement
+// actually has to be earned, instead of unlocking on the very first tap.
+export const INITIAL_HAPPINESS = 80;
+
 // How much each stat moves per minute of elapsed real time. happiness/energy
 // count down, hunger counts up (see semantics note above).
 export const DECAY_PER_MINUTE = {
@@ -60,7 +64,7 @@ export function clamp(value, min, max) {
 export function createInitialState(nowMs = Date.now()) {
   return {
     version: SCHEMA_VERSION,
-    happiness: 100,
+    happiness: INITIAL_HAPPINESS,
     hunger: 0,
     energy: 100,
     points: 0,

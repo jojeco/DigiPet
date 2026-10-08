@@ -7,7 +7,7 @@
 // a summary on success. Wired into `npm test` alongside check-petstate.mjs
 // (does not replace it).
 
-import { createInitialState, normalizeState, awardPoints, STAT_MAX } from "../game/petState.js";
+import { createInitialState, normalizeState, awardPoints, STAT_MAX, INITIAL_HAPPINESS } from "../game/petState.js";
 import { ACHIEVEMENTS, recordEvent, checkAchievements, achievementProgress } from "../game/achievements.js";
 
 let passCount = 0;
@@ -29,6 +29,20 @@ const BASE_NOW = 1_700_000_000_000; // fixed arbitrary epoch ms, never real Date
   assert(Object.keys(start.stats).length === 0, "createInitialState() stats should start empty");
   assert(start.achievements && typeof start.achievements === "object", "createInitialState() should include an achievements object");
   assert(Object.keys(start.achievements).length === 0, "createInitialState() achievements should start empty");
+}
+
+// --- Fresh saves must not start with "max_happiness" already earned ---
+{
+  assert(
+    INITIAL_HAPPINESS < STAT_MAX,
+    "INITIAL_HAPPINESS must be below STAT_MAX so max_happiness is an earnable achievement"
+  );
+  const fresh = createInitialState(BASE_NOW);
+  const { unlocked } = checkAchievements(fresh, BASE_NOW);
+  assert(
+    !unlocked.some((a) => a.id === "max_happiness"),
+    "a freshly created state should not immediately unlock max_happiness"
+  );
 }
 
 // --- recordEvent(): pure counter bumps ---

@@ -9,6 +9,7 @@
 import {
   clamp,
   createInitialState,
+  INITIAL_HAPPINESS,
   applyElapsed,
   pet,
   play,
@@ -49,15 +50,20 @@ assert(clamp(NaN, 0, 100) === 0, "clamp() should treat NaN as min");
   const tenMinutesLater = BASE_NOW + 10 * 60 * 1000;
   const decayed = applyElapsed(start, tenMinutesLater);
   assert(decayed !== start, "applyElapsed() should return a new object");
-  assert(decayed.happiness === 90, `expected happiness 90 after 10min decay, got ${decayed.happiness}`);
+  const expectedHappiness = INITIAL_HAPPINESS - 10;
+  assert(
+    decayed.happiness === expectedHappiness,
+    `expected happiness ${expectedHappiness} after 10min decay, got ${decayed.happiness}`
+  );
   assert(decayed.hunger === 15, `expected hunger 15 after 10min decay, got ${decayed.hunger}`);
   assert(decayed.energy === 92.5, `expected energy 92.5 after 10min decay, got ${decayed.energy}`);
-  assert(start.happiness === 100, "applyElapsed() must not mutate its input");
+  assert(start.happiness === INITIAL_HAPPINESS, "applyElapsed() must not mutate its input");
 }
 
-// pet() / play() — stat deltas and points/xp rewards unchanged. Start below
-// the happiness ceiling so a +2/+15 delta is actually observable (a fresh
-// createInitialState() is already at 100 happiness and would clamp it away).
+// pet() / play() — stat deltas and points/xp rewards unchanged. Pinned to a
+// fixed low happiness (rather than relying on whatever INITIAL_HAPPINESS
+// currently is) so the +2/+15 deltas are observable and this test doesn't
+// depend on that constant's exact value.
 {
   const start = { ...createInitialState(BASE_NOW), happiness: 50 };
   const petted = pet(start);
@@ -114,7 +120,7 @@ assert(clamp(NaN, 0, 100) === 0, "clamp() should treat NaN as min");
     !afterUse.inventory.some((i) => i.id === "toy"),
     "useItem() should have removed the toy from inventory"
   );
-  assert(afterUse.happiness === 100, "toy's +50 happiness should already be clamped at 100 from full");
+  assert(afterUse.happiness === 100, "toy's +50 happiness should clamp at the max (INITIAL_HAPPINESS + 50 overflows STAT_MAX)");
 }
 
 // maybeRegenToy() — not due yet: SAME reference (===), not just deep-equal.
