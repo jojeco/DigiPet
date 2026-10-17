@@ -5,7 +5,12 @@
 // and starts no timers of its own beyond the fade-up-and-out Animated
 // sequence, which auto-runs on mount/prop-change. The parent fully
 // controls what's shown by passing `message`/`tone`, and can force a
-// retrigger on an otherwise-identical message via a changing `nonce`.
+// retrigger on an otherwise-identical message via a changing `nonce`. The
+// optional `onDone` prop lets the parent chain a second message after this
+// one's animation genuinely finishes (e.g. draining a toast queue from
+// game/feedback.js) — it fires only when the sequence completes on its own,
+// never when a newer toast interrupts it early (see the `finished` guard
+// below).
 import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
 
@@ -14,7 +19,7 @@ const TONE_COLORS = {
   bad: "#E57373",
 };
 
-const StatFeedback = ({ message, tone, nonce }) => {
+const StatFeedback = ({ message, tone, nonce, onDone }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
 
@@ -35,7 +40,14 @@ const StatFeedback = ({ message, tone, nonce }) => {
         Animated.timing(translateY, { toValue: -50, duration: 400, useNativeDriver: true }),
       ]),
     ]);
-    animation.start();
+    animation.start(({ finished }) => {
+      // `finished` is false when a newer toast interrupts this one via the
+      // cleanup's animation.stop() below (e.g. the queue advances, or the
+      // message/nonce changes before this sequence completes) — in that
+      // case the interrupting run (or nothing, if the queue emptied) owns
+      // what happens next, so we must NOT also advance the queue here.
+      if (finished && onDone) onDone();
+    });
 
     return () => animation.stop();
     // Re-run whenever the message (or an explicit nonce bump for a repeat

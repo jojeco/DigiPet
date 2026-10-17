@@ -28,6 +28,7 @@ import {
   describeChange,
 } from "../game/petState"; // Pure game rules — see game/petState.js
 import { recordEvent, checkAchievements, achievementProgress } from "../game/achievements"; // Milestones system, built on the same pure-state convention
+import { buildFeedbackMessages } from "../game/feedback"; // Orders stat-delta + achievement-unlock messages into a queue instead of one overwriting the other
 import { loadState, saveState } from "../game/petStorage"; // AsyncStorage persistence
 
 // How often the "time passes" tick runs while the app is open. This is the
@@ -54,10 +55,17 @@ const PetApp = () => {
   // message (e.g. using the same item twice) still re-triggers the fade.
   const toastNonceRef = useRef(0);
 
-  // Floating toast state for item-use / shop-buy feedback. `nonce` is bumped
-  // on every real (non-no-op) action so StatFeedback re-animates even when
-  // the message text repeats.
-  const [toast, setToast] = useState({ message: "", tone: "good", nonce: 0 });
+  // Floating toast queue for item-use / shop-buy / achievement feedback. A
+  // single action can produce more than one message (e.g. a stat delta AND
+  // an achievement unlock) — see game/feedback.js's buildFeedbackMessages().
+  // Only toastQueue[0] is ever rendered; StatFeedback's onDone shifts it off
+  // once that message's animation genuinely finishes, revealing the next
+  // one. A new action REPLACES the queue (see applyAction() below), keeping
+  // only not-yet-shown achievement unlocks, so rapid tapping can't build a
+  // stale backlog of stat deltas but never silently loses an unlock. Each
+  // entry carries its own `nonce` (from toastNonceRef) so StatFeedback
+  // re-animates even when two entries in a row have identical text.
+  const [toastQueue, setToastQueue] = useState([]);
 
   // Whether the achievements list is currently shown. Toggled by a button
   // rendered alongside Shop — see the JSX below.
@@ -171,9 +179,10 @@ const PetApp = () => {
   // `kinds` lists which lifetime achievements/achievements.js stat counters
   // this action should bump (e.g. ["pets"], ["purchases"]) — see
   // game/achievements.js's recordEvent(). After bumping, checkAchievements()
-  // runs against the resulting state; any newly-unlocked achievements take
-  // over the toast slot for this action (see below) since an unlock is more
-  // noteworthy than the underlying stat delta that triggered it.
+  // runs against the resulting state; any newly-unlocked achievements are
+  // QUEUED alongside the stat-delta/fallback message for this action (via
+  // game/feedback.js's buildFeedbackMessages()), not swapped in over it —
+  // both play, stat delta first, then the unlock.
   const applyAction = async (fn, options = {}) => {
     const { animate = true, fallbackLabel = "", fallbackTone = "good", kinds = [] } = options;
     const prev = stateRef.current;
@@ -195,18 +204,17 @@ const PetApp = () => {
     saveState(next, { force: true }); // force-save exactly once, outside the updater
 
     const change = describeChange(prev, next);
-    let message = change.changed ? change.label : fallbackLabel;
-    let tone = change.changed ? change.tone : fallbackTone;
-    if (unlocked.length > 0) {
-      // Surface EVERY newly-unlocked achievement by name (not just a count),
-      // even when several unlock from the same action (e.g. reaching level
-      // 10 unlocks both "level_5" and "level_10" at once).
-      const names = unlocked.map((a) => a.name).join(", ");
-      message = `Achievement${unlocked.length > 1 ? "s" : ""} unlocked: ${names}`;
-      tone = "good";
-    }
-    if (message && isMountedRef.current) {
-      setToast({ message, tone, nonce: toastNonceRef.current++ });
+    const messages = buildFeedbackMessages({ change, unlocked, fallbackLabel, fallbackTone });
+    if (messages.length > 0 && isMountedRef.current) {
+      // Give each message in this action's result its own nonce (keeping
+      // the existing per-action counter pattern) so StatFeedback re-animates
+      // between them even if two entries happen to share identical text.
+      // This REPLACES the queue rather than appending, so rapid tapping
+      // never builds a stale backlog of stat deltas — but any achievement
+      // unlock still WAITING its turn (index 1+, i.e. not yet shown) is
+      // carried forward after this action's messages so it can't be lost.
+      const queued = messages.map((m) => ({ ...m, nonce: toastNonceRef.current++ }));
+      setToastQueue((q) => [...queued, ...q.slice(1).filter((m) => m.kind === "unlock")]);
     }
 
     if (animate) {
@@ -297,8 +305,13 @@ const PetApp = () => {
           minDurationMs={800}
         >
           <View style={styles.petContainer}>
-          {toast.message ? (
-            <StatFeedback message={toast.message} tone={toast.tone} nonce={toast.nonce} />
+          {toastQueue.length > 0 ? (
+            <StatFeedback
+              message={toastQueue[0].message}
+              tone={toastQueue[0].tone}
+              nonce={toastQueue[0].nonce}
+              onDone={() => isMountedRef.current && setToastQueue((q) => q.slice(1))}
+            />
           ) : null}
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
 

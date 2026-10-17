@@ -31,8 +31,10 @@
   progress — `game/petStorage.js`'s `loadState()` now routes every return
   path through it. `components/PetApp.js`'s `applyAction()` records the
   right event kind per action and runs `checkAchievements()` after, and any
-  newly-unlocked achievement takes over the existing `StatFeedback` toast
-  slot for that action. New presentational `components/Achievements.js`
+  newly-unlocked achievement took over the existing `StatFeedback` toast
+  slot for that action — **superseded, see item 12**: it's now queued
+  alongside the stat delta instead of overwriting it. New presentational
+  `components/Achievements.js`
   (locked/unlocked, progress, unlock date), toggled by a button next to Shop.
   Reward points are paid via the existing `awardPoints()` — no parallel
   points path. Covered by new `scripts/check-achievements.mjs`, wired into
@@ -104,12 +106,35 @@
 11. **Countdown feedback on toy return.** Fire the existing
     `applyAction()`-style bark/toast when the toy reappears so the player
     notices it's back without watching the Inventory.
-12. **Achievement toast queueing.** When one `applyAction()` call produces
-    both a real stat delta AND one or more achievement unlocks, the unlock
-    message currently wins the single `StatFeedback` toast slot outright and
-    the stat delta for that same action is silently dropped. A small
-    multi-message queue (even just "show stat delta, then unlock, 1s apart")
-    would surface both instead of picking one.
+12. ✅ **Achievement toast queueing** — done. New `game/feedback.js`
+    (import-free, same convention as `game/petState.js`) exports
+    `buildFeedbackMessages({ change, unlocked, fallbackLabel, fallbackTone })`,
+    returning an ORDERED list of `{ message, tone }` entries — the stat-delta
+    (or fallback) message first, then one combined unlock message — instead
+    of the achievement unlock overwriting the stat delta the way it used to.
+    `components/PetApp.js` now holds a `toastQueue` array (replaced wholesale
+    per action, never appended, so rapid tapping can't build a backlog) and
+    only ever renders `toastQueue[0]`. `components/StatFeedback.js` gained an
+    `onDone` prop, invoked from the fade animation's own completion callback
+    — guarded on `finished` so an interrupted/replaced toast (`finished:
+    false`, e.g. a newer queue replacing this one mid-animation) never
+    advances the queue early. `PetApp.js` shifts the queue in `onDone`,
+    revealing the next message once the current one's full ~1050ms
+    animation genuinely completes. Covered by new assertions appended to
+    `scripts/check-achievements.mjs` (delta-only, unlock-only, delta+unlock,
+    fallback+unlock, multi-unlock plural wording, empty case, and a
+    realistic `createInitialState()` → `pet()` → `recordEvent("pets")` →
+    `checkAchievements()` → `describeChange()` → `buildFeedbackMessages()`
+    end-to-end case asserting "Happiness +2" then "Achievement unlocked:
+    First Pet" in that order) — no `package.json` change needed since it
+    reused the existing `check-achievements.mjs` entry in `npm test` rather
+    than adding a new script. Item 11 (toy-return toast) can now push onto
+    this same queue instead of fighting StatFeedback's single slot.
+    Each entry is tagged `kind: "delta" | "unlock"`; when a new action
+    replaces the queue, any unlock still waiting its turn (not yet shown) is
+    carried forward after the new action's messages, so a fast double-tap
+    on the action that earns "First Pet" can't silently lose the unlock
+    toast. Stale stat deltas are still dropped, so no backlog builds up.
 13. **Achievements screen is inline, not a dedicated screen/modal.**
     `showAchievements` just toggles `components/Achievements.js` in place
     under Shop — fine today, but will want a real modal or nav route once

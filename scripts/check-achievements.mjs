@@ -2,13 +2,17 @@
 //
 // Plain-Node, zero-dependency self-check for game/achievements.js and the
 // achievements-related additions to game/petState.js (stats/achievements
-// fields, normalizeState()). Same style as scripts/check-petstate.mjs:
-// fixed nowMs, explicit assert(), exit 1 on the first failure, exit 0 with
-// a summary on success. Wired into `npm test` alongside check-petstate.mjs
-// (does not replace it).
+// fields, normalizeState()). Also covers game/feedback.js's
+// buildFeedbackMessages() (the achievement-unlock + stat-delta toast queue
+// consumed by components/PetApp.js) since it sits directly on top of this
+// module's checkAchievements() output. Same style as
+// scripts/check-petstate.mjs: fixed nowMs, explicit assert(), exit 1 on the
+// first failure, exit 0 with a summary on success. Wired into `npm test`
+// alongside check-petstate.mjs (does not replace it).
 
-import { createInitialState, normalizeState, awardPoints, STAT_MAX, INITIAL_HAPPINESS } from "../game/petState.js";
+import { createInitialState, normalizeState, awardPoints, pet, describeChange, STAT_MAX, INITIAL_HAPPINESS } from "../game/petState.js";
 import { ACHIEVEMENTS, recordEvent, checkAchievements, achievementProgress } from "../game/achievements.js";
+import { buildFeedbackMessages } from "../game/feedback.js";
 
 let passCount = 0;
 
@@ -183,6 +187,89 @@ const BASE_NOW = 1_700_000_000_000; // fixed arbitrary epoch ms, never real Date
     process.exit(1);
   }
   assert(fallback.stats && fallback.achievements, "normalizeState(null) should still produce a valid stats/achievements shape");
+}
+
+// --- buildFeedbackMessages() (game/feedback.js): orders stat-delta/fallback
+// and achievement-unlock messages into a queue instead of one overwriting
+// the other. See components/PetApp.js's applyAction() for the real caller. ---
+
+// delta only -> 1 message
+{
+  const change = { changed: true, deltas: [{ stat: "happiness", delta: 2, good: true }], label: "Happiness +2", tone: "good" };
+  const messages = buildFeedbackMessages({ change, unlocked: [], fallbackLabel: "", fallbackTone: "good" });
+  assert(messages.length === 1, `delta-only should produce exactly 1 message, got ${messages.length}`);
+  assert(messages[0].message === "Happiness +2" && messages[0].tone === "good", "delta-only message should match change.label/tone");
+}
+
+// unlock only (no delta, no fallback) -> 1 message
+{
+  const change = { changed: false, deltas: [], label: "" };
+  const unlocked = [{ id: "first_pet", name: "First Pet" }];
+  const messages = buildFeedbackMessages({ change, unlocked, fallbackLabel: "", fallbackTone: "good" });
+  assert(messages.length === 1, `unlock-only should produce exactly 1 message, got ${messages.length}`);
+  assert(messages[0].message === "Achievement unlocked: First Pet", `unlock-only wording should match, got "${messages[0].message}"`);
+  assert(messages[0].tone === "good", "unlock message tone should always be 'good'");
+}
+
+// delta + unlock -> 2 messages, delta first
+{
+  const change = { changed: true, deltas: [{ stat: "happiness", delta: 2, good: true }], label: "Happiness +2", tone: "good" };
+  const unlocked = [{ id: "first_pet", name: "First Pet" }];
+  const messages = buildFeedbackMessages({ change, unlocked, fallbackLabel: "", fallbackTone: "good" });
+  assert(messages.length === 2, `delta+unlock should produce exactly 2 messages, got ${messages.length}`);
+  assert(messages[0].message === "Happiness +2", "delta+unlock: the stat delta must come first");
+  assert(messages[1].message === "Achievement unlocked: First Pet", "delta+unlock: the unlock must come second");
+}
+
+// fallback + unlock -> 2 messages
+{
+  const change = { changed: false, deltas: [], label: "" };
+  const unlocked = [{ id: "first_purchase", name: "Shopper" }];
+  const messages = buildFeedbackMessages({ change, unlocked, fallbackLabel: "Bought Treat", fallbackTone: "good" });
+  assert(messages.length === 2, `fallback+unlock should produce exactly 2 messages, got ${messages.length}`);
+  assert(messages[0].message === "Bought Treat" && messages[0].tone === "good", "fallback+unlock: the fallback must come first");
+  assert(messages[1].message === "Achievement unlocked: Shopper", "fallback+unlock: the unlock must come second");
+}
+
+// multiple unlocks -> 1 combined message, plural wording
+{
+  const change = { changed: false, deltas: [], label: "" };
+  const unlocked = [{ id: "level_5", name: "Growing Up" }, { id: "level_10", name: "Veteran" }];
+  const messages = buildFeedbackMessages({ change, unlocked, fallbackLabel: "", fallbackTone: "good" });
+  assert(messages.length === 1, `multiple unlocks alone should still produce exactly 1 combined message, got ${messages.length}`);
+  assert(
+    messages[0].message === "Achievements unlocked: Growing Up, Veteran",
+    `multiple-unlock wording should use plural "Achievements" and join names, got "${messages[0].message}"`
+  );
+}
+
+// nothing -> empty array
+{
+  const change = { changed: false, deltas: [], label: "" };
+  const messages = buildFeedbackMessages({ change, unlocked: [], fallbackLabel: "", fallbackTone: "good" });
+  assert(Array.isArray(messages) && messages.length === 0, "no change, no fallback, no unlocks should produce an empty array");
+}
+
+// realistic end-to-end: first tap ever should surface the stat delta then the "First Pet" unlock
+{
+  const prev = createInitialState(BASE_NOW);
+  let next = pet(prev);
+  next = recordEvent(next, "pets");
+  const { state: withAchievements, unlocked } = checkAchievements(next, BASE_NOW);
+  const change = describeChange(prev, withAchievements);
+
+  assert(change.changed === true, "a first tap should move happiness, so describeChange() should report a change");
+  assert(unlocked.length === 1 && unlocked[0].id === "first_pet", "a first tap's single 'pets' event should unlock exactly 'first_pet'");
+
+  const messages = buildFeedbackMessages({ change, unlocked, fallbackLabel: "", fallbackTone: "good" });
+  assert(messages.length === 2, `a first tap should queue exactly 2 messages, got ${messages.length}`);
+  assert(messages[0].message === "Happiness +2", `the stat delta should come first, got "${messages[0].message}"`);
+  assert(
+    messages[1].message === "Achievement unlocked: First Pet",
+    `the achievement unlock should come second with the real catalogue name, got "${messages[1].message}"`
+  );
+  // PetApp.js relies on `kind` to carry not-yet-shown unlocks forward when a newer action replaces the queue
+  assert(messages[0].kind === "delta" && messages[1].kind === "unlock", "entries should be tagged kind 'delta' then 'unlock'");
 }
 
 console.log(`PASS: all ${passCount} assertions passed in scripts/check-achievements.mjs`);
