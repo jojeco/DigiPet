@@ -103,9 +103,17 @@
 10. **Component-level tests for `ToyCooldown`.** Once Jest +
     `@testing-library/react-native` exist (item 2), add a fake-timers test
     that the interval starts only while counting and is cleared on unmount.
-11. **Countdown feedback on toy return.** Fire the existing
-    `applyAction()`-style bark/toast when the toy reappears so the player
-    notices it's back without watching the Inventory.
+11. ✅ **Countdown feedback on toy return (toast only)** — done. New pure
+    `toyJustReturned(prev, next)` in `game/petState.js` detects the exact
+    missing->present inventory transition `maybeRegenToy()` produces.
+    `components/PetApp.js`'s tick effect now captures `applyElapsed()`'s
+    result as `afterDecay` before calling `maybeRegenToy()`, and when
+    `toyJustReturned(afterDecay, next)` is true it APPENDS (not replaces) a
+    `{ message: "Your Toy is back!", tone: "good", kind: "unlock" }` entry
+    onto the same toast queue `applyAction()` uses, so it can't cut off an
+    in-flight action toast. Deliberately toast-only, no bark/sound/
+    vibration — those would fire from a background timer and surprise the
+    player; sound/vibration for this stays open, see item 15.
 12. ✅ **Achievement toast queueing** — done. New `game/feedback.js`
     (import-free, same convention as `game/petState.js`) exports
     `buildFeedbackMessages({ change, unlocked, fallbackLabel, fallbackTone })`,
@@ -146,11 +154,13 @@
     imported). Width is the clamped current/target percentage, guarded
     against a missing/zero target or NaN; unlocked rows always show a full
     bar in a distinct "done" colour.
-15. **A toy-return-timed achievement, once item 11 ships.** `toy_five`
-    (added this pass) only counts total Toy uses and is deliberately not
-    tied to the cooldown/regen mechanic. Once "countdown feedback on toy
-    return" (item 11) exists, a "used the toy right as it came back"
-    achievement could build on top of it.
+15. **A toy-return-timed achievement — unblocked now that item 11 shipped.**
+    `toy_five` (added earlier) only counts total Toy uses and is
+    deliberately not tied to the cooldown/regen mechanic. Now that
+    `toyJustReturned()` (item 11) exists, a "used the toy right as it came
+    back" achievement could build on top of it. Also still open from item
+    11: bark/sound/vibration when the toy returns — left out on purpose
+    since it fires from a background timer.
 16. ✅ **Fresh saves no longer unlock "Pure Joy" on the very first tap** —
     done. `createInitialState()` used to start happiness at `STAT_MAX`
     itself, so a brand new pet's first action unlocked both `first_pet` and

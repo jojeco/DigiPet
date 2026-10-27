@@ -241,6 +241,19 @@ export function maybeRegenToy(state, nowMs = Date.now()) {
   };
 }
 
+// Pure change-detection for the toy-return toast (item 11 in NEXT.md): true
+// only when `prev` did NOT hold the free Toy and `next` DOES — i.e. the exact
+// transition maybeRegenToy() produces on the tick it actually regens the
+// toy. False while still on cooldown (no inventory change), and false if the
+// toy was already held (nothing "returned"). Never inspects timestamps —
+// just the inventory, so it works regardless of what produced `next`.
+export function toyJustReturned(prev, next) {
+  if (!prev || !next) return false;
+  const hadToy = prev.inventory.some((item) => item.id === FREE_TOY.id);
+  const hasToy = next.inventory.some((item) => item.id === FREE_TOY.id);
+  return !hadToy && hasToy;
+}
+
 // How many whole milliseconds are left until the free Toy is due back, for
 // display purposes only (it never changes state — maybeRegenToy() owns that).
 // Returns 0 when there is nothing to count down: the toy is already held

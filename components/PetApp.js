@@ -24,6 +24,7 @@ import {
   buyItem,
   applyElapsed,
   maybeRegenToy,
+  toyJustReturned,
   mood,
   describeChange,
 } from "../game/petState"; // Pure game rules — see game/petState.js
@@ -122,16 +123,34 @@ const PetApp = () => {
         const prev = stateRef.current;
         if (!prev) return;
         const now = Date.now();
-        let next = applyElapsed(prev, now);
+        const afterDecay = applyElapsed(prev, now);
         // Re-add the free Toy once its cooldown (set by useItem() when it
         // was last consumed) has elapsed — see maybeRegenToy() in
         // game/petState.js. No-ops (returns the same reference) when a
         // regen isn't due yet.
-        next = maybeRegenToy(next, now);
+        const next = maybeRegenToy(afterDecay, now);
 
         stateRef.current = next;
         if (isMountedRef.current) setState(next);
         saveState(next, { force: true }); // always persist on the decay tick
+
+        // The toy came back on this tick (item 11 in NEXT.md) — append a
+        // toast so the player notices without opening Inventory. Appended
+        // (not replacing the queue) so this can't cut off an in-flight
+        // action toast; deliberately no bark/sound/vibration — this fires
+        // from a background timer and would be surprising (sound stays
+        // open, see NEXT.md item 11/15).
+        if (toyJustReturned(afterDecay, next) && isMountedRef.current) {
+          setToastQueue((q) => [
+            ...q,
+            {
+              message: "Your Toy is back!",
+              tone: "good",
+              kind: "unlock",
+              nonce: toastNonceRef.current++,
+            },
+          ]);
+        }
       }, TICK_INTERVAL_MS); // Apply elapsed-time decay + toy regen + persist every ~7s
     };
 

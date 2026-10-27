@@ -17,6 +17,7 @@ import {
   buyItem,
   describeChange,
   maybeRegenToy,
+  toyJustReturned,
   toyCooldownRemainingMs,
   formatCooldown,
   FREE_TOY,
@@ -185,6 +186,35 @@ assert(clamp(NaN, 0, 100) === 0, "clamp() should treat NaN as min");
   delete legacyHolding.toyAvailableAt;
   const result = maybeRegenToy(legacyHolding, BASE_NOW + 999_999_999);
   assert(result === legacyHolding, "legacy state already holding the toy should be an exact no-op");
+}
+
+// toyJustReturned() — drives the toy-return toast (NEXT.md item 11).
+{
+  const held = createInitialState(BASE_NOW); // starts holding the toy
+  const used = useItem(held, "toy", BASE_NOW); // toy missing, cooldown stamped
+
+  assert(
+    toyJustReturned(used, held) === true,
+    "toyJustReturned() should be true when the toy goes missing -> present"
+  );
+  assert(
+    toyJustReturned(held, held) === false,
+    "toyJustReturned() should be false when the toy is already held on both sides"
+  );
+
+  // Still on cooldown: maybeRegenToy() no-ops (no inventory change) -> false.
+  const stillCoolingDown = maybeRegenToy(used, BASE_NOW + 1000);
+  assert(
+    toyJustReturned(used, stillCoolingDown) === false,
+    "toyJustReturned() should be false while still on cooldown (no inventory change)"
+  );
+
+  // End-to-end: useItem() then maybeRegenToy() right as the cooldown clears.
+  const regenned = maybeRegenToy(used, used.toyAvailableAt + 1);
+  assert(
+    toyJustReturned(used, regenned) === true,
+    "toyJustReturned() should be true for the real useItem()->maybeRegenToy() regen transition"
+  );
 }
 
 // toyCooldownRemainingMs() / formatCooldown() — the pure helpers behind the countdown UI.
