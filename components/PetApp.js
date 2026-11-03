@@ -169,17 +169,16 @@ const PetApp = () => {
 
   // Function to play the pet interaction sound.
   const playSound = async () => {
-    const { sound } = await Audio.Sound.createAsync(
+    let sound;
+    ({ sound } = await Audio.Sound.createAsync(
       Bark,
-      { shouldPlay: true }
-    );
-    await sound.playAsync();
-
-    sound.setOnPlaybackStatusUpdate(async (status) => {
-      if (status.didJustFinish) {
-        await sound.unloadAsync();
+      { shouldPlay: true },
+      async (status) => {
+        if (status.didJustFinish) {
+          await sound.unloadAsync().catch(() => {});
+        }
       }
-    });
+    ));
   };
 
   // Single entry point for every user action that mutates pet state (tap,

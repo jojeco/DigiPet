@@ -174,3 +174,22 @@
     created state never has `max_happiness` unlocked (plus
     `INITIAL_HAPPINESS < STAT_MAX`). Still open: the achievements list is
     capped at 240px and scrolls, but has not been checked on a real device.
+
+## Fixed
+
+- ✅ **`playSound()` leaked a native audio player on every tap/long-press.**
+  `components/PetApp.js`'s `playSound()` called `Audio.Sound.createAsync(Bark,
+  { shouldPlay: true })` (which already starts playback) and then also
+  `await sound.playAsync()` (redundant, and risked restarting the clip), and
+  only attached the `didJustFinish` → `unloadAsync()` callback via
+  `setOnPlaybackStatusUpdate()` AFTER both awaits resolved — for a short
+  clip, playback could finish before the callback was ever attached, so the
+  unload never ran. Fixed by passing the status callback as `createAsync`'s
+  third argument (attached before playback starts) and dropping the
+  redundant `playAsync()` call; also added `.catch(() => {})` on the
+  `unloadAsync()` call so a failed unload can't surface as an unhandled
+  promise rejection. This was inferred from reading the `expo-av` API shape,
+  not confirmed empirically — this sandbox has no RN test harness or real
+  device to actually observe the leak before/after. Worth a real-device
+  smoke test (tap repeatedly, check native audio session/player count)
+  before fully trusting it fixed.
