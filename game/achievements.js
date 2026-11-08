@@ -120,6 +120,14 @@ export const ACHIEVEMENTS = [
     test: (state) => statCount(state, "toysUsed") >= 5,
     progress: countProgress("toysUsed", 5),
   },
+  {
+    id: "toy_quick_catch",
+    name: "Quick Paws",
+    description: "Use the Toy within a minute of it coming back.",
+    reward: { points: 15 },
+    test: (state) => statCount(state, "quickToyCatches") >= 1,
+    progress: countProgress("quickToyCatches", 1),
+  },
 ];
 
 // Pure. Bumps state.stats[kind] by n (default 1), creating the stats object

@@ -154,13 +154,14 @@
     imported). Width is the clamped current/target percentage, guarded
     against a missing/zero target or NaN; unlocked rows always show a full
     bar in a distinct "done" colour.
-15. **A toy-return-timed achievement — unblocked now that item 11 shipped.**
-    `toy_five` (added earlier) only counts total Toy uses and is
-    deliberately not tied to the cooldown/regen mechanic. Now that
-    `toyJustReturned()` (item 11) exists, a "used the toy right as it came
-    back" achievement could build on top of it. Also still open from item
-    11: bark/sound/vibration when the toy returns — left out on purpose
-    since it fires from a background timer.
+15. ✅ **A toy-return-timed achievement** — done. `maybeRegenToy()` now
+    stamps `toyReturnedAt` on the regen branch, and `game/petState.js`
+    exports `TOY_QUICK_CATCH_MS` (60s) plus the pure `isQuickToyCatch(state,
+    nowMs)` check. `game/achievements.js` gained `toy_quick_catch` ("Quick
+    Paws", 15 points), and `components/PetApp.js`'s `handleUseItem` records
+    a `quickToyCatches` event when the Toy is used within that window.
+    Still open from item 11: bark/sound/vibration when the toy returns —
+    left out on purpose since it fires from a background timer.
 16. ✅ **Fresh saves no longer unlock "Pure Joy" on the very first tap** —
     done. `createInitialState()` used to start happiness at `STAT_MAX`
     itself, so a brand new pet's first action unlocked both `first_pet` and

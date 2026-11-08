@@ -25,6 +25,7 @@ import {
   applyElapsed,
   maybeRegenToy,
   toyJustReturned,
+  isQuickToyCatch,
   mood,
   describeChange,
 } from "../game/petState"; // Pure game rules — see game/petState.js
@@ -271,9 +272,14 @@ const PetApp = () => {
     // even though the item really was consumed. Every real item use counts
     // toward "itemsUsed"; the free Toy specifically also counts toward
     // "toysUsed" (a separate lifetime counter, unrelated to its cooldown).
+    const kinds = ["itemsUsed"];
+    if (item.id === "toy") {
+      kinds.push("toysUsed");
+      if (isQuickToyCatch(stateRef.current, Date.now())) kinds.push("quickToyCatches");
+    }
     await applyAction((prev) => applyItem(prev, item.id), {
       fallbackLabel: `Used ${item.name}`,
-      kinds: item.id === "toy" ? ["itemsUsed", "toysUsed"] : ["itemsUsed"],
+      kinds,
     }); // no-op entirely if item isn't actually held
   };
 

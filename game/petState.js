@@ -238,7 +238,22 @@ export function maybeRegenToy(state, nowMs = Date.now()) {
     ...state,
     inventory: [...state.inventory, FREE_TOY],
     toyAvailableAt: null,
+    toyReturnedAt: nowMs,
   };
+}
+
+// How long after the Toy comes back it still counts as a "quick catch" for
+// the toy_quick_catch achievement (NEXT.md item 15).
+export const TOY_QUICK_CATCH_MS = 60 * 1000;
+
+// Pure check for "the Toy is held AND it came back within the last minute".
+// Never crashes on an old save missing toyReturnedAt — returns false instead.
+export function isQuickToyCatch(state, nowMs = Date.now()) {
+  if (!state.inventory.some((item) => item.id === FREE_TOY.id)) return false;
+  const toyReturnedAt = state.toyReturnedAt;
+  if (typeof toyReturnedAt !== "number" || Number.isNaN(toyReturnedAt)) return false;
+  const elapsed = nowMs - toyReturnedAt;
+  return elapsed >= 0 && elapsed <= TOY_QUICK_CATCH_MS;
 }
 
 // Pure change-detection for the toy-return toast (item 11 in NEXT.md): true

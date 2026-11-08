@@ -20,8 +20,10 @@ import {
   toyJustReturned,
   toyCooldownRemainingMs,
   formatCooldown,
+  isQuickToyCatch,
   FREE_TOY,
   TOY_REGEN_COOLDOWN_MS,
+  TOY_QUICK_CATCH_MS,
   SHOP_ITEMS,
 } from "../game/petState.js";
 
@@ -144,6 +146,7 @@ assert(clamp(NaN, 0, 100) === 0, "clamp() should treat NaN as min");
   assert(regenned !== afterUse, "maybeRegenToy() should return a NEW object when due");
   assert(regenned.inventory.some((i) => i.id === "toy"), "maybeRegenToy() should add the toy back to inventory");
   assert(!regenned.toyAvailableAt, "maybeRegenToy() should clear toyAvailableAt once regenned");
+  assert(regenned.toyReturnedAt === dueAt, `maybeRegenToy() should stamp toyReturnedAt with nowMs, got ${regenned.toyReturnedAt}`);
 }
 
 // maybeRegenToy() — already holding a toy: no double-regen even if "due".
@@ -268,6 +271,31 @@ assert(clamp(NaN, 0, 100) === 0, "clamp() should treat NaN as min");
 
 // FREE_TOY shape sanity — guards against an accidental shape change during the move.
 assert(FREE_TOY.id === "toy" && FREE_TOY.name === "Toy" && FREE_TOY.effects.happiness === 50, "FREE_TOY shape changed unexpectedly");
+
+// --- isQuickToyCatch() — drives the "Quick Paws" achievement (NEXT.md item 15) ---
+{
+  const holding = createInitialState(BASE_NOW); // starts holding the toy
+  assert(
+    isQuickToyCatch({ ...holding, toyReturnedAt: BASE_NOW }, BASE_NOW) === true,
+    "isQuickToyCatch() should be true at exactly +0s after toyReturnedAt"
+  );
+  assert(
+    isQuickToyCatch({ ...holding, toyReturnedAt: BASE_NOW }, BASE_NOW + TOY_QUICK_CATCH_MS) === true,
+    "isQuickToyCatch() should be true at exactly +60s after toyReturnedAt"
+  );
+  assert(
+    isQuickToyCatch({ ...holding, toyReturnedAt: BASE_NOW }, BASE_NOW + TOY_QUICK_CATCH_MS + 1) === false,
+    "isQuickToyCatch() should be false at +61s after toyReturnedAt"
+  );
+  assert(
+    isQuickToyCatch({ ...holding, inventory: [], toyReturnedAt: BASE_NOW }, BASE_NOW) === false,
+    "isQuickToyCatch() should be false when the inventory doesn't have the Toy"
+  );
+  assert(
+    isQuickToyCatch({ ...holding, toyReturnedAt: undefined }, BASE_NOW) === false,
+    "isQuickToyCatch() should be false when toyReturnedAt is missing, not crash"
+  );
+}
 
 console.log(`PASS: all ${passCount} assertions passed in scripts/check-petstate.mjs`);
 process.exit(0);

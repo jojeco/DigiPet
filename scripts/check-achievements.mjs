@@ -113,6 +113,30 @@ const BASE_NOW = 1_700_000_000_000; // fixed arbitrary epoch ms, never real Date
   assert(result.unlocked.some((a) => a.id === "max_happiness"), "happiness at STAT_MAX should unlock 'max_happiness'");
 }
 
+// --- "Quick Paws" (toy_quick_catch) achievement (NEXT.md item 15) ---
+{
+  const fresh = createInitialState(BASE_NOW);
+  const { unlocked: freshUnlocked } = checkAchievements(fresh, BASE_NOW);
+  assert(
+    !freshUnlocked.some((a) => a.id === "toy_quick_catch"),
+    "a fresh state should not have 'toy_quick_catch' unlocked"
+  );
+
+  let state = { ...createInitialState(BASE_NOW), happiness: 50 };
+  state = recordEvent(state, "quickToyCatches", 1);
+  const { state: after, unlocked } = checkAchievements(state, BASE_NOW);
+  assert(
+    unlocked.length === 1 && unlocked[0].id === "toy_quick_catch",
+    "recording a quickToyCatches event should unlock exactly 'toy_quick_catch'"
+  );
+  assert(after.points === 15, `'toy_quick_catch' should award 15 points, got ${after.points}`);
+
+  // Idempotency: checking again must not re-unlock or re-pay.
+  const { state: again, unlocked: unlockedAgain } = checkAchievements(recordEvent(after, "quickToyCatches", 1), BASE_NOW + 1);
+  assert(unlockedAgain.length === 0, "'toy_quick_catch' must not re-unlock once already unlocked");
+  assert(again.points === 15, "'toy_quick_catch' must not re-pay once already unlocked");
+}
+
 // --- achievementProgress(): reflects real counters/targets and flips on unlock ---
 {
   let state = createInitialState(BASE_NOW);
