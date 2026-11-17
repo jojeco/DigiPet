@@ -1,5 +1,31 @@
 # NEXT.md
 
+## Inventory grouping (this pass)
+
+- ✅ **`components/Inventory.js` now groups by `item.id`** instead of
+  rendering one button per array entry. Buying 3 Treats shows one
+  "Use Treat (x3)" button (keyed `item.id`, stable) instead of three
+  identical buttons keyed by a stale array index. Empty inventory now
+  shows "No items" instead of a bare heading. `game/petState.js` and
+  `components/PetApp.js` untouched — `useItem()` still looks up by
+  `item.id` and removes one copy, so pressing a grouped button behaves
+  exactly like pressing one of the old duplicate buttons.
+
+### Follow-ups for a future pass
+
+1. **No sort/priority for the grouped list.** Groups render in
+   first-seen order (whichever item was bought first stays first); a
+   future pass could let the Shop's catalogue order (or an explicit
+   priority, e.g. consumables before equipment) drive display order
+   instead.
+2. **No per-item icon/art in Inventory.js.** Still text-only buttons;
+   if `Shop.js` ever gets item icons, Inventory could reuse them next
+   to the count.
+3. **Grouping logic is local to `Inventory.js`.** If another screen
+   ever needs the same "count duplicates by id" grouping (e.g. a future
+   inventory summary on a stats screen), it's worth lifting into a pure
+   helper in `game/petState.js` rather than duplicating this loop.
+
 ## What shipped in this pass
 
 - `game/petState.js` — pure, dependency-free pet-state core: three stats
