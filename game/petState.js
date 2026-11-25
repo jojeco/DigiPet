@@ -212,6 +212,39 @@ export function useItem(state, itemId, nowMs = Date.now()) {
   return next;
 }
 
+// Display-only: groups inventory entries by item.id with a count, ordered to
+// match the Shop catalogue (SHOP_ITEMS), with the free Toy and any unknown
+// ids after all catalogue items (first-seen order among themselves). Does
+// NOT change how items are consumed — useItem() still removes one copy by
+// id regardless of this display order. Defensive against a corrupt/missing
+// inventory (same spirit as describeChange() above): non-array input -> [].
+export function groupInventory(inventory) {
+  if (!Array.isArray(inventory)) return [];
+
+  const groupsById = {};
+  const groups = [];
+  inventory.forEach((item, firstSeen) => {
+    const existing = groupsById[item.id];
+    if (existing) {
+      existing.count += 1;
+      return;
+    }
+    const catalogueIndex = SHOP_ITEMS.findIndex((i) => i.id === item.id);
+    const group = {
+      item,
+      count: 1,
+      sortKey: catalogueIndex === -1 ? SHOP_ITEMS.length : catalogueIndex,
+      firstSeen,
+    };
+    groupsById[item.id] = group;
+    groups.push(group);
+  });
+
+  return groups
+    .sort((a, b) => a.sortKey - b.sortKey || a.firstSeen - b.firstSeen)
+    .map(({ item, count }) => ({ item, count }));
+}
+
 // Re-adds the free Toy to the inventory once its cooldown has elapsed.
 // Returns the SAME object reference (matching this module's no-op
 // convention, e.g. useItem()/buyItem() above) when a regen isn't due yet,
@@ -330,6 +363,23 @@ export const BETTER_WHEN = {
 
 function capitalize(word) {
   return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+// Formats an item's effects object as "Happiness +10, Hunger -15" for Shop/
+// Inventory button labels. Key order follows STAT_KEYS (not object-key
+// order); zero, non-number, and unknown-key entries are skipped. Missing or
+// empty effects return "".
+export function formatEffects(effects) {
+  if (!effects || typeof effects !== "object") return "";
+
+  const parts = [];
+  for (const stat of STAT_KEYS) {
+    const value = effects[stat];
+    if (typeof value !== "number" || Number.isNaN(value) || value === 0) continue;
+    const sign = value > 0 ? "+" : "";
+    parts.push(`${capitalize(stat)} ${sign}${value}`);
+  }
+  return parts.join(", ");
 }
 
 // Pure comparison of two state objects (typically "before" and "after" an

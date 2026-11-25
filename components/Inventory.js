@@ -1,32 +1,24 @@
 import React from 'react';
 import { View, Text, Button, StyleSheet } from 'react-native';
+import { groupInventory, formatEffects } from '../game/petState';
 
 const Inventory = ({ inventory, onUseItem }) => {
-  // Group by item.id so buying the same item multiple times shows one
-  // button with a count, instead of one stale-keyed button per purchase.
-  const groups = [];
-  const groupsById = {};
-  for (const item of inventory) {
-    const group = groupsById[item.id];
-    if (group) {
-      group.count += 1;
-    } else {
-      groupsById[item.id] = { item, count: 1 };
-      groups.push(groupsById[item.id]);
-    }
-  }
+  const groups = groupInventory(inventory);
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Inventory:</Text>
       {groups.length === 0 && <Text>No items</Text>}
-      {groups.map(({ item, count }) => (
-        <Button
-          key={item.id}
-          title={`Use ${item.name}${count > 1 ? ` (x${count})` : ''}`}
-          onPress={() => onUseItem(item)}
-        />
-      ))}
+      {groups.map(({ item, count }) => {
+        const effectsLabel = formatEffects(item.effects);
+        return (
+          <Button
+            key={item.id}
+            title={`Use ${item.name}${count > 1 ? ` (x${count})` : ''}${effectsLabel ? ` · ${effectsLabel}` : ''}`}
+            onPress={() => onUseItem(item)}
+          />
+        );
+      })}
     </View>
   );
 };

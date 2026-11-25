@@ -13,18 +13,22 @@
 
 ### Follow-ups for a future pass
 
-1. **No sort/priority for the grouped list.** Groups render in
-   first-seen order (whichever item was bought first stays first); a
-   future pass could let the Shop's catalogue order (or an explicit
-   priority, e.g. consumables before equipment) drive display order
-   instead.
+1. ✅ **No sort/priority for the grouped list** — done. New pure
+   `groupInventory(inventory)` in `game/petState.js` orders groups by
+   `SHOP_ITEMS` catalogue index, with the free Toy and any unknown ids
+   after all catalogue items (first-seen order among themselves).
+   `Inventory.js` now just calls it. Covered by new assertions in
+   `scripts/check-petstate.mjs`.
 2. **No per-item icon/art in Inventory.js.** Still text-only buttons;
    if `Shop.js` ever gets item icons, Inventory could reuse them next
    to the count.
-3. **Grouping logic is local to `Inventory.js`.** If another screen
-   ever needs the same "count duplicates by id" grouping (e.g. a future
-   inventory summary on a stats screen), it's worth lifting into a pure
-   helper in `game/petState.js` rather than duplicating this loop.
+3. ✅ **Grouping logic is local to `Inventory.js`** — done, lifted into
+   `groupInventory()` in `game/petState.js` (see item 1).
+4. **Shop and Inventory buttons now show each item's effects** (e.g.
+   "Treat (10 pts) · Hunger -30") via new `formatEffects()` in
+   `game/petState.js`. Shortcut: long titles (name + count + effects)
+   haven't been checked on a real narrow-screen device and may wrap —
+   not a bug to fix now, just unverified.
 
 ## What shipped in this pass
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, Button, StyleSheet } from "react-native";
-import { SHOP_ITEMS } from "../game/petState";
+import { SHOP_ITEMS, formatEffects } from "../game/petState";
 
 // Catalogue-driven shop. Rendering only — no game logic here. Pressing a
 // button calls onBuy(item); PetApp is responsible for calling the pure
@@ -10,14 +10,17 @@ const Shop = ({ points, onBuy }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Shop:</Text>
-      {SHOP_ITEMS.map((item) => (
-        <Button
-          key={item.id}
-          title={`${item.name} (${item.cost} pts)`}
-          onPress={() => onBuy(item)}
-          disabled={points < item.cost}
-        />
-      ))}
+      {SHOP_ITEMS.map((item) => {
+        const effectsLabel = formatEffects(item.effects);
+        return (
+          <Button
+            key={item.id}
+            title={`${item.name} (${item.cost} pts)${effectsLabel ? ` · ${effectsLabel}` : ""}`}
+            onPress={() => onBuy(item)}
+            disabled={points < item.cost}
+          />
+        );
+      })}
     </View>
   );
 };

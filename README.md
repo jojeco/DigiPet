@@ -40,3 +40,6 @@ left in place, not deleted).
 The game rules live in `game/petState.js`, a small dependency-free module
 (no React, no React Native imports) so they can be reasoned about — and
 tested — independently of the UI. Persistence lives in `game/petStorage.js`.
+
+Shop and Inventory buttons show what each item does (e.g. "Hunger -30"), and
+Inventory lists items in the same order as the Shop, with the Toy last.

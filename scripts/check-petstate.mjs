@@ -25,6 +25,9 @@ import {
   TOY_REGEN_COOLDOWN_MS,
   TOY_QUICK_CATCH_MS,
   SHOP_ITEMS,
+  awardPoints,
+  groupInventory,
+  formatEffects,
 } from "../game/petState.js";
 
 let passCount = 0;
@@ -295,6 +298,100 @@ assert(FREE_TOY.id === "toy" && FREE_TOY.name === "Toy" && FREE_TOY.effects.happ
     isQuickToyCatch({ ...holding, toyReturnedAt: undefined }, BASE_NOW) === false,
     "isQuickToyCatch() should be false when toyReturnedAt is missing, not crash"
   );
+}
+
+// --- groupInventory() / formatEffects() — display-only helpers for Shop/Inventory buttons ---
+
+// Empty and corrupt input -> [], never throws.
+{
+  assert(Array.isArray(groupInventory([])) && groupInventory([]).length === 0, "groupInventory([]) should be []");
+  assert(
+    Array.isArray(groupInventory(undefined)) && groupInventory(undefined).length === 0,
+    "groupInventory(undefined) should be [] (corrupt-save safety)"
+  );
+}
+
+// Counts: three of the same item collapse into one group with count 3.
+{
+  const treatEffects = SHOP_ITEMS.find((i) => i.id === "treat").effects;
+  const threeTreats = [
+    { id: "treat", name: "Treat", effects: treatEffects },
+    { id: "treat", name: "Treat", effects: treatEffects },
+    { id: "treat", name: "Treat", effects: treatEffects },
+  ];
+  const grouped = groupInventory(threeTreats);
+  assert(grouped.length === 1, "three Treats should collapse into one group");
+  assert(grouped[0].count === 3, `expected count 3 for three Treats, got ${grouped[0].count}`);
+}
+
+// Catalogue order (real flow: createInitialState -> awardPoints -> buyItem):
+// treat(x2), ball, napmat, and the free toy -> grouped in SHOP_ITEMS order
+// (treat, ball, napmat), toy last. Also checks no mutation of the input array.
+{
+  let state = createInitialState(BASE_NOW); // inventory: [FREE_TOY]
+  state = awardPoints(state, 100);
+  state = buyItem(state, "napmat");
+  state = buyItem(state, "ball");
+  state = buyItem(state, "treat");
+  state = buyItem(state, "treat");
+  // inventory is now [toy, napmat, ball, treat, treat]
+
+  const beforeLength = state.inventory.length;
+  const beforeSnapshot = [...state.inventory];
+
+  const grouped = groupInventory(state.inventory);
+  const ids = grouped.map((g) => g.item.id);
+  assert(
+    ids[0] === "treat" && ids[1] === "ball" && ids[2] === "napmat" && ids[3] === "toy",
+    `expected catalogue order [treat, ball, napmat, toy], got [${ids.join(", ")}]`
+  );
+  assert(grouped.find((g) => g.item.id === "treat").count === 2, "treat group should have count 2");
+
+  // No mutation: input array length/order unchanged after grouping.
+  assert(state.inventory.length === beforeLength, "groupInventory() must not change the input array's length");
+  assert(
+    state.inventory.every((item, i) => item === beforeSnapshot[i]),
+    "groupInventory() must not reorder or mutate the input array"
+  );
+}
+
+// Unknown ids: an item whose id isn't in SHOP_ITEMS sorts after catalogue
+// items and doesn't throw. Ties among non-catalogue ids (toy, mystery) keep
+// first-seen order.
+{
+  const withUnknown = [
+    { id: "treat", name: "Treat", effects: { hunger: -30 } },
+    FREE_TOY,
+    { id: "mystery", name: "Mystery", effects: {} },
+  ];
+  let grouped;
+  try {
+    grouped = groupInventory(withUnknown);
+  } catch (err) {
+    console.error(`FAIL: groupInventory() crashed on an unknown item id: ${err}`);
+    process.exit(1);
+  }
+  const ids = grouped.map((g) => g.item.id);
+  assert(ids[0] === "treat", "catalogue item (treat) should sort before unknown ids");
+  assert(
+    ids.indexOf("toy") < ids.indexOf("mystery"),
+    "non-catalogue ids should keep first-seen order (toy before mystery)"
+  );
+}
+
+// formatEffects() — key order follows STAT_KEYS, "+" for positive, skips
+// zero/non-number/unknown keys, "" for missing/empty.
+{
+  assert(formatEffects({ hunger: -30 }) === "Hunger -30", `expected "Hunger -30", got "${formatEffects({ hunger: -30 })}"`);
+  assert(
+    formatEffects({ hunger: -15, happiness: 10 }) === "Happiness +10, Hunger -15",
+    `expected STAT_KEYS order "Happiness +10, Hunger -15", got "${formatEffects({ hunger: -15, happiness: 10 })}"`
+  );
+  assert(formatEffects({}) === "", "formatEffects({}) should be \"\"");
+  assert(formatEffects(undefined) === "", "formatEffects(undefined) should be \"\"");
+  assert(formatEffects({ happiness: 0 }) === "", "formatEffects() should skip a zero value");
+  assert(formatEffects({ xp: 5 }) === "", "formatEffects() should skip an unknown stat key");
+  assert(formatEffects({ happiness: "5", energy: NaN }) === "", "formatEffects() should skip non-number and NaN values");
 }
 
 console.log(`PASS: all ${passCount} assertions passed in scripts/check-petstate.mjs`);
